@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manager Control Center</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-6">
+
+    <div class="max-w-4xl mx-auto">
+        <header class="flex justify-between items-center mb-8 border-b border-slate-800 pb-5">
+            <div>
+                <h1 class="text-2xl font-black text-indigo-400">Manager Master Roster</h1>
+                <p class="text-sm text-slate-400">Review, approve, or deny employee shift requests.</p>
+            </div>
+            <a href="/" class="bg-slate-800 hover:bg-slate-700 text-white text-xs px-4 py-2 rounded-lg font-medium transition border border-slate-700">View Public Site</a>
+        </header>
+
+        <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-slate-750 text-slate-300 border-b border-slate-700">
+                    <tr>
+                        <th class="p-4 text-xs font-bold uppercase tracking-wider">Shift Info</th>
+                        <th class="p-4 text-xs font-bold uppercase tracking-wider">Type</th>
+                        <th class="p-4 text-xs font-bold uppercase tracking-wider">Current Sign-up</th>
+                        <th class="p-4 text-xs font-bold uppercase tracking-wider">Approval Controls</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700">
+                    {% for shift in shifts %}
+                    <tr class="hover:bg-slate-750 transition">
+                        <td class="p-4">
+                            <span class="font-bold block text-white">{{ shift.day_of_week }}</span>
+                            <span class="text-xs text-slate-400 block mt-0.5">{{ shift.time_slot }}</span>
+                        </td>
+                        <td class="p-4">
+                            {% if shift.shift_type == 'Day' %}
+                                <span class="text-amber-400 font-semibold text-sm">☀️ Day</span>
+                            {% else %}
+                                <span class="text-indigo-400 font-semibold text-sm">🌙 Night</span>
+                            {% endif %}
+                        </td>
+                        <td class="p-4 text-sm font-medium">
+                            {% if shift.claimed_by %}
+                                <span class="text-indigo-300 font-bold">{{ shift.claimed_by }}</span>
+                            {% else %}
+                                <span class="text-slate-500 italic">No one registered</span>
+                            {% endif %}
+                        </td>
+                        <td class="p-4 text-xs">
+                            {% if shift.status == 'Pending Approval' %}
+                                <div class="flex gap-2">
+                                    <a href="/manager/review/{{ shift.id }}/approve" class="bg-emerald-600 text-white font-bold px-3 py-1.5 rounded-md hover:bg-emerald-500 transition">Approve</a>
+                                    <a href="/manager/review/{{ shift.id }}/deny" class="bg-rose-600 text-white font-bold px-3 py-1.5 rounded-md hover:bg-rose-500 transition">Deny</a>
+                                </div>
+                            {% elif shift.status == 'Approved' %}
+                                <span class="text-emerald-400 font-bold">✓ Active Schedule</span>
+                            {% else %}
+                                <span class="text-slate-500">Available to Staff</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</body>
+</html>
