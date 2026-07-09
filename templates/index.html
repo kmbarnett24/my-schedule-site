@@ -3,100 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Team Schedule Portal</title>
+    <title>Enterprise Roster Matrix</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
-<body class="bg-slate-50 text-slate-800 antialiased min-h-screen pb-12">
+<body class="bg-slate-900 text-slate-100 min-h-screen pb-12 antialiased">
 
-    <div class="max-w-6xl mx-auto px-4 pt-8">
-        <!-- Header banner -->
-        <header class="bg-gradient-to-r from-indigo-600 to-violet-700 rounded-2xl p-6 md:p-8 text-white shadow-lg mb-8 text-center md:text-left">
-            <h1 class="text-3xl md:text-4xl font-black tracking-tight">Staff Self-Scheduling Calendar</h1>
-            <p class="text-indigo-100 mt-2 font-medium">Select your preferred slots. All adjustments are updated live in real time.</p>
+    <div class="max-w-7xl mx-auto px-4 pt-6">
+        <!-- Control Header Card -->
+        <header class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+                <h1 class="text-3xl font-black text-indigo-400">2026 Shift Matrix</h1>
+                <p class="text-sm text-slate-400 mt-1">Times formatted in 24-hour military standards. Use inputs below to secure your shifts or add an <span class="text-rose-400 font-bold">"R"</span> tag for schedule exemptions.</p>
+            </div>
+            <!-- Month Picker Navbar Dropdown -->
+            <form method="GET" action="/" class="flex items-center gap-3">
+                <label for="month" class="text-xs font-bold uppercase tracking-wider text-slate-400">Select Calendar Month:</label>
+                <select name="month" id="month" onchange="this.form.submit()" class="bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 font-bold text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    {% for m in months %}
+                        <option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </form>
         </header>
 
-        <!-- Flash alerts -->
-        {% with messages = get_flashed_messages() %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
-            {% for msg in messages %}
-              <div class="bg-emerald-500 text-white p-4 rounded-xl mb-6 shadow font-semibold text-center animate-pulse">
+            {% for cat, msg in messages %}
+              <div class="bg-indigo-600 text-white font-bold p-4 rounded-xl text-center mb-6 shadow">
                 {{ msg }}
               </div>
             {% endfor %}
           {% endif %}
         {% endwith %}
 
-        <!-- Two Columns Layout: Day vs Night -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            
-            <!-- DAY SHIFTS COLUMN -->
-            <div>
-                <div class="flex items-center gap-3 mb-4 pl-1">
-                    <span class="text-2xl">☀️</span>
-                    <h2 class="text-2xl font-bold text-amber-700 tracking-wide uppercase text-sm">Dedicated Day Shifts</h2>
+        <!-- Master Calendar Grid Block -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {% for day_num, shifts in calendar_days.items() %}
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col justify-between shadow-md">
+                
+                <!-- Day Label Header -->
+                <div class="border-b border-slate-700 pb-2 mb-3 flex justify-between items-center">
+                    <span class="text-xl font-black text-slate-300">Day {{ day_num }}</span>
+                    <span class="text-xs text-slate-500 font-mono">{{ current_month }}</span>
                 </div>
-                <div class="space-y-4">
-                    {% for shift in day_shifts %}
-                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition hover:shadow-md">
-                        <div>
-                            <h3 class="text-lg font-bold text-slate-900">{{ shift.day_of_week }}</h3>
-                            <p class="text-xs text-slate-500 font-mono mt-0.5">{{ shift.time_slot }}</p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            {% if shift.status == 'Open' %}
-                                <form action="/claim/{{ shift.id }}" method="POST" class="flex gap-2 w-full">
-                                    <input type="text" name="staff_name" placeholder="Your Name" required class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none max-w-[150px]">
-                                    <button type="submit" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-1.5 rounded-lg text-sm transition shadow-xs">Sign Up</button>
-                                </form>
-                            {% elif shift.status == 'Pending Approval' %}
-                                <div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-lg font-medium text-right">
-                                    🔒 {{ shift.claimed_by }} <span class="block text-[10px] text-amber-600">(Awaiting Approval)</span>
-                                </div>
-                            {% else %}
-                                <div class="bg-indigo-600 text-white text-xs px-4 py-2 rounded-lg font-bold shadow-xs">
-                                    ✅ Filled by: {{ shift.claimed_by }}
-                                </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
 
-            <!-- NIGHT SHIFTS COLUMN -->
-            <div>
-                <div class="flex items-center gap-3 mb-4 pl-1">
-                    <span class="text-2xl">🌙</span>
-                    <h2 class="text-2xl font-bold text-indigo-900 tracking-wide uppercase text-sm">Dedicated Night Shifts</h2>
-                </div>
-                <div class="space-y-4">
-                    {% for shift in night_shifts %}
-                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition hover:shadow-md">
-                        <div>
-                            <h3 class="text-lg font-bold text-slate-900">{{ shift.day_of_week }}</h3>
-                            <p class="text-xs text-slate-500 font-mono mt-0.5">{{ shift.time_slot }}</p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            {% if shift.status == 'Open' %}
-                                <form action="/claim/{{ shift.id }}" method="POST" class="flex gap-2 w-full">
-                                    <input type="text" name="staff_name" placeholder="Your Name" required class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none max-w-[150px]">
-                                    <button type="submit" class="bg-indigo-900 hover:bg-indigo-950 text-white font-bold px-4 py-1.5 rounded-lg text-sm transition shadow-xs">Sign Up</button>
-                                </form>
-                            {% elif shift.status == 'Pending Approval' %}
-                                <div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-lg font-medium text-right">
-                                    🔒 {{ shift.claimed_by }} <span class="block text-[10px] text-amber-600">(Awaiting Approval)</span>
-                                </div>
-                            {% else %}
-                                <div class="bg-indigo-600 text-white text-xs px-4 py-2 rounded-lg font-bold shadow-xs">
-                                    ✅ Filled by: {{ shift.claimed_by }}
-                                </div>
-                            {% endif %}
-                        </div>
+                <!-- Day Shift Container -->
+                <div class="mb-4 bg-slate-850 p-2.5 rounded-lg border border-slate-750">
+                    <div class="flex justify-between items-center text-xs font-bold mb-1">
+                        <span class="text-amber-400">☀️ DAY (07:00 - 19:00)</span>
                     </div>
-                    {% endfor %}
-                </div>
-            </div>
+                    
+                    <!-- Assigned Info Status -->
+                    <div class="text-xs py-1">
+                        {% if shifts['Day'].status == 'Approved' %}
+                            <span class="text-emerald-400 font-black">✅ {{ shifts['Day'].claimed_by }}</span>
+                        {% elif shifts['Day'].status == 'Pending' %}
+                            <span class="text-amber-400 font-medium">⏳ {{ shifts['Day'].claimed_by }} (Pending)</span>
+                        {% else %}
+                            <span class="text-slate-500 italic">Unassigned Slot</span>
+                        {% endif %}
+                    </div>
 
+                    <!-- Unavailable Roster Listing -->
+                    {% if shifts['Day'].requested_off %}
+                        <div class="text-[11px] text-rose-300 mt-1 bg-rose-950/40 p-1.5 rounded border border-rose-900/50">
+                            <strong>R (Off):</strong> {{ shifts['Day'].requested_off }}
+                        </div>
+                    {% endif %}
+
+                    <!-- Sign Up Form Element -->
+                    <form action="/claim/{{ shifts['Day'].id }}" method="POST" class="mt-2 flex gap-1.5">
+                        <input type="text" name="staff_name" placeholder="Name" required class="bg-slate-900 text-xs border border-slate-600 rounded px-2 py-1 w-full focus:outline-none text-white">
+                        <button type="submit" {% if shifts['Day'].status != 'Open' %}disabled class="opacity-30 bg-slate-600 text-slate-400 text-[10px] px-2 rounded font-bold" {% else %} class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] px-2 rounded font-bold transition" {% endif %}>Claim</button>
+                    </form>
+
+                    <!-- Add R Form Element -->
+                    <form action="/request-off/{{ shifts['Day'].id }}" method="POST" class="mt-1 flex gap-1.5">
+                        <input type="text" name="staff_name" placeholder="Name for R" required class="bg-slate-900 text-xs border border-slate-600 rounded px-2 py-1 w-full focus:outline-none text-white">
+                        <button type="submit" class="bg-rose-700 hover:bg-rose-600 text-white text-[10px] px-2 rounded font-bold transition">Request R</button>
+                    </form>
+                </div>
+
+                <!-- Night Shift Container -->
+                <div class="bg-slate-850 p-2.5 rounded-lg border border-slate-750">
+                    <div class="flex justify-between items-center text-xs font-bold mb-1">
+                        <span class="text-indigo-400">🌙 NIGHT (19:00 - 07:00)</span>
+                    </div>
+
+                    <!-- Assigned Info Status -->
+                    <div class="text-xs py-1">
+                        {% if shifts['Night'].status == 'Approved' %}
+                            <span class="text-emerald-400 font-black">✅ {{ shifts['Night'].claimed_by }}</span>
+                        {% elif shifts['Night'].status == 'Pending' %}
+                            <span class="text-amber-400 font-medium">⏳ {{ shifts['Night'].claimed_by }} (Pending)</span>
+                        {% else %}
+                            <span class="text-slate-500 italic">Unassigned Slot</span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Unavailable Roster Listing -->
+                    {% if shifts['Night'].requested_off %}
+                        <div class="text-[11px] text-rose-300 mt-1 bg-rose-950/40 p-1.5 rounded border border-rose-900/50">
+                            <strong>R (Off):</strong> {{ shifts['Night'].requested_off }}
+                        </div>
+                    {% endif %}
+
+                    <!-- Sign Up Form Element -->
+                    <form action="/claim/{{ shifts['Night'].id }}" method="POST" class="mt-2 flex gap-1.5">
+                        <input type="text" name="staff_name" placeholder="Name" required class="bg-slate-900 text-xs border border-slate-600 rounded px-2 py-1 w-full focus:outline-none text-white">
+                        <button type="submit" {% if shifts['Night'].status != 'Open' %}disabled class="opacity-30 bg-slate-600 text-slate-400 text-[10px] px-2 rounded font-bold" {% else %} class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] px-2 rounded font-bold transition" {% endif %}>Claim</button>
+                    </form>
+
+                    <!-- Add R Form Element -->
+                    <form action="/request-off/{{ shifts['Night'].id }}" method="POST" class="mt-1 flex gap-1.5">
+                        <input type="text" name="staff_name" placeholder="Name for R" required class="bg-slate-900 text-xs border border-slate-600 rounded px-2 py-1 w-full focus:outline-none text-white">
+                        <button type="submit" class="bg-rose-700 hover:bg-rose-600 text-white text-[10px] px-2 rounded font-bold transition">Request R</button>
+                    </form>
+                </div>
+
+            </div>
+            {% endfor %}
         </div>
     </div>
 

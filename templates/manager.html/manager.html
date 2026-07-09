@@ -3,67 +3,81 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manager Control Center</title>
+    <title>Roster Manager Control</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen p-6">
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6">
 
-    <div class="max-w-4xl mx-auto">
+    <div class="max-w-5xl mx-auto">
         <header class="flex justify-between items-center mb-8 border-b border-slate-800 pb-5">
             <div>
-                <h1 class="text-2xl font-black text-indigo-400">Manager Master Roster</h1>
-                <p class="text-sm text-slate-400">Review, approve, or deny employee shift requests.</p>
+                <h1 class="text-2xl font-black text-indigo-400">Roster System Controls</h1>
+                <p class="text-sm text-slate-400">Active Month Scope: {{ current_month }}</p>
             </div>
-            <a href="/" class="bg-slate-800 hover:bg-slate-700 text-white text-xs px-4 py-2 rounded-lg font-medium transition border border-slate-700">View Public Site</a>
+            <div class="flex items-center gap-4">
+                <form method="GET" action="/manager">
+                    <select name="month" onchange="this.form.submit()" class="bg-slate-900 border border-slate-700 text-sm text-indigo-300 rounded-lg px-3 py-1.5 font-bold">
+                        {% for m in months %}
+                            <option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+                <a href="/" class="text-xs bg-slate-800 border border-slate-700 px-3 py-2 rounded-lg font-bold">Return to Main View</a>
+            </div>
         </header>
 
-        <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
-            <table class="w-full text-left border-collapse">
-                <thead class="bg-slate-750 text-slate-300 border-b border-slate-700">
-                    <tr>
-                        <th class="p-4 text-xs font-bold uppercase tracking-wider">Shift Info</th>
-                        <th class="p-4 text-xs font-bold uppercase tracking-wider">Type</th>
-                        <th class="p-4 text-xs font-bold uppercase tracking-wider">Current Sign-up</th>
-                        <th class="p-4 text-xs font-bold uppercase tracking-wider">Approval Controls</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-700">
-                    {% for shift in shifts %}
-                    <tr class="hover:bg-slate-750 transition">
-                        <td class="p-4">
-                            <span class="font-bold block text-white">{{ shift.day_of_week }}</span>
-                            <span class="text-xs text-slate-400 block mt-0.5">{{ shift.time_slot }}</span>
-                        </td>
-                        <td class="p-4">
-                            {% if shift.shift_type == 'Day' %}
-                                <span class="text-amber-400 font-semibold text-sm">☀️ Day</span>
-                            {% else %}
-                                <span class="text-indigo-400 font-semibold text-sm">🌙 Night</span>
-                            {% endif %}
-                        </td>
-                        <td class="p-4 text-sm font-medium">
-                            {% if shift.claimed_by %}
-                                <span class="text-indigo-300 font-bold">{{ shift.claimed_by }}</span>
-                            {% else %}
-                                <span class="text-slate-500 italic">No one registered</span>
-                            {% endif %}
-                        </td>
-                        <td class="p-4 text-xs">
-                            {% if shift.status == 'Pending Approval' %}
-                                <div class="flex gap-2">
-                                    <a href="/manager/review/{{ shift.id }}/approve" class="bg-emerald-600 text-white font-bold px-3 py-1.5 rounded-md hover:bg-emerald-500 transition">Approve</a>
-                                    <a href="/manager/review/{{ shift.id }}/deny" class="bg-rose-600 text-white font-bold px-3 py-1.5 rounded-md hover:bg-rose-500 transition">Deny</a>
-                                </div>
-                            {% elif shift.status == 'Approved' %}
-                                <span class="text-emerald-400 font-bold">✓ Active Schedule</span>
-                            {% else %}
-                                <span class="text-slate-500">Available to Staff</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <!-- Dynamic Action queue block -->
+        <div class="mb-8">
+            <h2 class="text-lg font-bold text-amber-400 mb-3">Awaiting Approval Queue</h2>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl divide-y divide-slate-800 overflow-hidden">
+                {% if not pending_shifts %}
+                    <p class="p-4 text-sm text-slate-500 italic">No current entries to evaluate.</p>
+                {% endif %}
+                {% for p in pending_shifts %}
+                <div class="p-4 flex items-center justify-between text-sm">
+                    <div>
+                        <span class="font-bold text-white">Day {{ p.day_number }} ({{ p.shift_type }})</span>
+                        <span class="text-slate-400 text-xs ml-2 font-mono">Time: {{ p.time_slot }}</span>
+                        <span class="block text-indigo-300 font-semibold mt-1">Applicant: {{ p.claimed_by }}</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <a href="/manager/review/{{ p.id }}/approve" class="bg-emerald-600 px-3 py-1 text-xs font-bold rounded-md hover:bg-emerald-500 transition">Approve</a>
+                        <a href="/manager/review/{{ p.id }}/deny" class="bg-rose-600 px-3 py-1 text-xs font-bold rounded-md hover:bg-rose-500 transition">Deny</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Reference Summary Matrix -->
+        <div>
+            <h2 class="text-lg font-bold text-slate-300 mb-3">Roster Record Review</h2>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden text-sm">
+                <table class="w-full text-left">
+                    <thead class="bg-slate-850 border-b border-slate-800 text-xs uppercase tracking-wider text-slate-400">
+                        <tr>
+                            <th class="p-4">Day Target</th>
+                            <th class="p-4">Shift Parameters</th>
+                            <th class="p-4">Assigned Personnel</th>
+                            <th class="p-4">Logged Day Off Requests ("R")</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800 text-slate-300">
+                        {% for s in all_shifts %}
+                        <tr>
+                            <td class="p-4 font-bold text-white">Day {{ s.day_number }}</td>
+                            <td class="p-4 font-mono text-xs">{{ s.shift_type }} ({{ s.time_slot }})</td>
+                            <td class="p-4">
+                                {% if s.status == 'Approved' %}<span class="text-emerald-400 font-bold">{{ s.claimed_by }}</span>
+                                {% elif s.status == 'Pending' %}<span class="text-amber-400 font-medium">{{ s.claimed_by }} (Pending)</span>
+                                {% else %}<span class="text-slate-600 italic">Unassigned</span>{% endif %}
+                            </td>
+                            <td class="p-4 text-xs text-rose-300 font-medium">{{ s.requested_off or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
