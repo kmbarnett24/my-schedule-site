@@ -3,14 +3,10 @@ from flask_sqlalchemy import SQLAlchemy
 import os
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'fallback-dev-key-123')
+app.secret_key = 'super-secret-key-123'
 
-# Pull the production database URL from the environment config
-db_url = os.environ.get('DATABASE_URL', 'sqlite:///schedule.db')
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+# This uses a local database file so we don't have to worry about Supabase passwords
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///schedule.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -23,6 +19,19 @@ class Shift(db.Model):
 
 @app.route('/')
 def index():
+    # Automatically build database tables if they don't exist yet
+    db.create_all()
+    
+    # Pre-populate sample shifts automatically if the system is brand empty
+    if Shift.query.count() == 0:
+        sample_shifts = [
+            Shift(date="2026-08-10", time_slot="09:00 AM - 05:00 PM"),
+            Shift(date="2026-08-10", time_slot="05:00 PM - 01:00 AM"),
+            Shift(date="2026-08-11", time_slot="09:00 AM - 05:00 PM"),
+        ]
+        db.session.add_all(sample_shifts)
+        db.session.commit()
+
     shifts = Shift.query.order_by(Shift.date).all()
     return render_template('index.html', shifts=shifts)
 
@@ -51,21 +60,6 @@ def review_shift(shift_id, action):
             flash('Shift denied and reopened.', 'info')
         db.session.commit()
     return redirect(url_for('index'))
-
-# Helper setup route to quickly populate your calendar empty slots
-@app.route('/seed-database-xyz')
-def seed():
-    db.create_all()
-    if Shift.query.count() == 0:
-        sample_shifts = [
-            Shift(date="2026-08-10", time_slot="09:00 AM - 05:00 PM"),
-            Shift(date="2026-08-10", time_slot="05:00 PM - 01:00 AM"),
-            Shift(date="2026-08-11", time_slot="09:00 AM - 05:00 PM"),
-        ]
-        db.session.add_all(sample_shifts)
-        db.session.commit()
-        return "Database Initialized with Shifts!"
-    return "Database already has records."
 
 if __name__ == '__main__':
     with app.app_context():
