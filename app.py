@@ -155,29 +155,35 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# 7. First-Time Database Setup Tool
+# Updated First-Time Database Setup Tool
 @app.route('/seed-database-xyz')
 def seed():
     db.drop_all()
     db.create_all()
     
-    # Creates one Master Manager account to start out with
+    # Creates your Master Manager account
     super_manager = User(name="Head Administrator", initials="ADM", role="Manager")
     db.session.add(super_manager)
     
     today = datetime.today()
-    # Generates standard nursing shifts on calendar blocks for testing
-    sample_shifts = [
-        Shift(date=f"{today.year}-{today.month:02d}-01", time_slot="7 AM - 7 PM"),
-        Shift(date=f"{today.year}-{today.month:02d}-04", time_slot="7 PM - 7 AM"),
-        Shift(date=f"{today.year}-{today.month:02d}-12", time_slot="7 AM - 7 PM"),
-        Shift(date=f"{today.year}-{today.month:02d}-12", time_slot="7 PM - 7 AM"),
-        Shift(date=f"{today.year}-{today.month:02d}-25", time_slot="7 AM - 7 PM"),
-    ]
-    db.session.add_all(sample_shifts)
+    year, month = today.year, today.month
+    
+    # Get the total number of days in the current month
+    num_days = calendar.monthrange(year, month)[1]
+    
+    # Loop through every single day of the month
+    for day in range(1, num_days + 1):
+        day_str = f"{year}-{month:02d}-{day:02d}"
+        
+        # Create standard Day and Night slots for each day
+        day_shift = Shift(date=day_str, time_slot="7 AM - 7 PM")
+        night_shift = Shift(date=day_str, time_slot="7 PM - 7 AM")
+        
+        db.session.add(day_shift)
+        db.session.add(night_shift)
+        
     db.session.commit()
-    return "Database updated! Go back to the website and log in using 'ADM'."
-
+    return f"Database successfully updated! Populated Day and Night shifts for all {num_days} days of this month. Go back to the website and log in using 'ADM'."
 if __name__ == '__main__':
     with app.app_context(): db.create_all()
     app.run(debug=True)
