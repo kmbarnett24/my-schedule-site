@@ -26,10 +26,8 @@ class Shift(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.String(10), nullable=False) # Format: YYYY-MM-DD
     time_slot = db.Column(db.String(50), nullable=False) # e.g., "7 AM - 7 PM"
-    # Relationships to get all user claims on this specific shift block
     claims = db.relationship('ShiftClaim', backref='shift', cascade="all, delete-orphan")
 
-# NEW TABLE: Coordinates individual staff signups to a shift block
 class ShiftClaim(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
@@ -37,7 +35,6 @@ class ShiftClaim(db.Model):
     status = db.Column(db.String(20), default='Pending Approval') # Pending Approval, Approved
     user = db.relationship('User', backref='claims')
 
-# NEW TABLE: Tracks lock status of a month
 class MonthStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     month_key = db.Column(db.String(7), unique=True, nullable=False) # Format: "YYYY-MM"
@@ -64,7 +61,6 @@ HOLIDAYS_FIXED = {
     "12-25": "Christmas 🎄", "12-31": "NYE ✨"
 }
 
-# 1. Updated Main Home Calendar Route (Supports Multi-Month Navigation)
 @app.route('/')
 def index():
     if 'user_id' not in session: 
@@ -73,7 +69,6 @@ def index():
     today = datetime.today()
     year = today.year
     
-    # Check if a user clicked a specific month; otherwise, default to the current month
     month = request.args.get('month', default=today.month, type=int)
     if month < 1 or month > 12:
         month = today.month
@@ -83,25 +78,21 @@ def index():
     start_date_str = f"{year}-{month:02d}-01"
     end_date_str = f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]}"
     
-    # Loop and create shift framework templates for all 12 months of the year
-    for m in range(1, 13):
-        num_days = calendar.monthrange(year, m)[1]
-        for day in range(1, num_days + 1):
-            day_str = f"{year}-{m:02d}-{day:02d}"
-            db.session.add(Shift(date=day_str, time_slot="7 AM - 7 PM"))
-            db.session.add(Shift(date=day_str, time_slot="7 PM - 7 AM"))
+    db_shifts = Shift.query.filter(Shift.date >= start_date_str, Shift.date <= end_date_str).all()
+    
+    shifts_by_day = {}
+    for shift in db_shifts:
+        day_num = int(shift.date.split('-')[2])
+        if day_num not in shifts_by_day: shifts_by_day[day_num] = []
+        shifts_by_day[day_num].append(shift)
 
-    # Fetch finalization check status for this specific month
     status_record = MonthStatus.query.filter_by(month_key=month_key).first()
     is_finalized = status_record.is_finalized if status_record else False
 
-    # Get user lists and holidays for rendering
     all_users = User.query.filter_by(role='Staff').order_by(User.name).all()
     holidays_by_day = {d: HOLIDAYS_FIXED[f"{month:02d}-{d:02d}"] for d in range(1, 32) if f"{month:02d}-{d:02d}" in HOLIDAYS_FIXED}
     
     cal = calendar.Calendar(firstweekday=6)
-    
-    # Generate a list of all 12 month names paired with their number for the top buttons
     all_months_list = [(i, calendar.month_name[i]) for i in range(1, 13)]
     
     return render_template('index.html', days=list(cal.itermonthdays(year, month)), 
@@ -128,18 +119,21 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# Sign up for a shift block (Supports multiple users)
 @app.route('/claim/<int:shift_id>', methods=['POST'])
 def claim_shift(shift_id):
     if 'user_id' not in session: return redirect(url_for('login'))
     
-    # Block signup attempts if schedule is locked
-    today = datetime.today()
-    month_key = f"{today.year}-{today.month:02d}"
+    shift = Shift.query.get(shift_id)
+    if not shift:
+        flash('Shift not found.', 'error')
+        return redirect(url_for('index'))
+        
+    month_key = shift.date[:7] # Extracts YYYY-MM directly from shift date
     status_record = MonthStatus.query.filter_by(month_key=month_key).first()
     if status_record and status_record.is_finalized:
         flash('Schedule is locked! Changes cannot be processed for finalized months.', 'error')
-        return redirect(url_for('index'))
+        current_view_month = int(month_key.split('-')[1])
+        return redirect(url_for('index', month=current_view_month))
 
     user_id = session['user_id']
     existing_claim = ShiftClaim.query.filter_by(shift_id=shift_id, user_id=user_id).first()
@@ -151,57 +145,57 @@ def claim_shift(shift_id):
         db.session.add(new_claim)
         db.session.commit()
         flash('Sign-up request recorded!', 'success')
-    return redirect(url_for('index'))
+        
+    current_view_month = int(month_key.split('-')[1])
+    return redirect(url_for('index', month=current_view_month))
 
-# Manager Approval Actions Endpoint
 @app.route('/manager/review-claim/<int:claim_id>/<action>')
 def review_claim(claim_id, action):
     if session.get('user_role') != 'Manager': return redirect(url_for('index'))
     claim = ShiftClaim.query.get(claim_id)
+    current_view_month = datetime.today().month
     if claim:
+        current_view_month = int(claim.shift.date.split('-')[1])
         if action == 'approve':
             claim.status = 'Approved'
         elif action == 'deny':
             db.session.delete(claim)
         db.session.commit()
-    return redirect(url_for('index'))
+    return redirect(url_for('index', month=current_view_month))
 
-# NEW METHOD: Move a user to any day/time slot instantly
 @app.route('/manager/reassign', methods=['POST'])
 def reassign_staff():
     if session.get('user_role') != 'Manager': return redirect(url_for('index'))
     
-    claim_id = request.form.get('claim_id') # If moving an existing claim
-    user_id = request.form.get('user_id')   # If assigning directly from drop menu
-    target_date = request.form.get('target_date') # Format: YYYY-MM-DD
-    target_slot = request.form.get('target_slot') # "7 AM - 7 PM" or "7 PM - 7 AM"
+    claim_id = request.form.get('claim_id')
+    user_id = request.form.get('user_id')
+    target_date = request.form.get('target_date')
+    target_slot = request.form.get('target_slot')
 
-    # Find or verify target shift destination entry
     target_shift = Shift.query.filter_by(date=target_date, time_slot=target_slot).first()
     if not target_shift:
-        flash('Error mapping destination target calendar day parameters.', 'error')
+        flash('Error mapping destination calendar day parameters.', 'error')
         return redirect(url_for('index'))
 
+    current_view_month = int(target_date.split('-')[1])
+
     if claim_id:
-        # Move existing sign-up
         claim = ShiftClaim.query.get(claim_id)
         if claim:
             claim.shift_id = target_shift.id
-            claim.status = 'Approved' # Force approve shifted records automatically
+            claim.status = 'Approved'
             db.session.commit()
             flash('Staff reassigned successfully!', 'success')
     elif user_id:
-        # Directly assign from scratch
         new_claim = ShiftClaim(shift_id=target_shift.id, user_id=user_id, status='Approved')
         db.session.add(new_claim)
         db.session.commit()
-        flash('Staff assigned to target date block!', 'success')
+        flash('Staff assigned directly to target date block!', 'success')
 
-    return redirect(url_for('index'))
+    return redirect(url_for('index', month=current_view_month))
 
-# Updated Month Lock Switch (Preserves current view perspective)
 @app.route('/manager/finalize/<month_key>/<int:status>')
-def finalize_month(month_key):
+def finalize_month(month_key, status):
     if session.get('user_role') != 'Manager': return redirect(url_for('index'))
     
     record = MonthStatus.query.filter_by(month_key=month_key).first()
@@ -212,10 +206,10 @@ def finalize_month(month_key):
     record.is_finalized = True if status == 1 else False
     db.session.commit()
     
-    # Extract month number out of key string to pass back into the redirection arguments
     current_view_month = int(month_key.split('-')[1])
-    flash('Schedule distribution state adjustments updated!', 'success')
+    flash('Schedule updates locked and broadcasted!', 'success')
     return redirect(url_for('index', month=current_view_month))
+
 @app.route('/admin/register', methods=['GET', 'POST'])
 def register_staff():
     if session.get('user_role') != 'Manager': return redirect(url_for('index'))
@@ -238,17 +232,21 @@ def seed():
     db.session.add(super_manager)
     
     today = datetime.today()
-    year, month = today.year, today.month
-    num_days = calendar.monthrange(year, month)[1]
+    year = today.year
     
-    for day in range(1, num_days + 1):
-        day_str = f"{year}-{month:02d}-{day:02d}"
-        db.session.add(Shift(date=day_str, time_slot="7 AM - 7 PM"))
-        db.session.add(Shift(date=day_str, time_slot="7 PM - 7 AM"))
+    for m in range(1, 13):
+        num_days = calendar.monthrange(year, m)[1]
+        for day in range(1, num_days + 1):
+            day_str = f"{year}-{m:02d}-{day:02d}"
+            db.session.add(Shift(date=day_str, time_slot="7 AM - 7 PM"))
+            db.session.add(Shift(date=day_str, time_slot="7 PM - 7 AM"))
         
     db.session.commit()
-    return "Framework structural modifications synchronized! Sign in using 'ADM'."
+    return "Full 12-month schedule system architecture successfully initialized! Log in with 'ADM'."
+
+# Force-creates any missing database structure blocks on every system startup
+with app.app_context(): 
+    db.create_all()
 
 if __name__ == '__main__':
-    with app.app_context(): db.create_all()
     app.run(debug=True)
