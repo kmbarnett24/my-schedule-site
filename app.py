@@ -15,11 +15,10 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Updated User Model for 3 Initials
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    initials = db.Column(db.String(3), unique=True, nullable=False) # Stores exactly 3 letters
+    initials = db.Column(db.String(3), unique=True, nullable=False)
     role = db.Column(db.String(20), default='Staff') # Staff or Manager
 
 class Shift(db.Model):
@@ -51,21 +50,17 @@ HOLIDAYS_FIXED = {
     "12-25": "Christmas Day 🎄", "12-31": "New Year's Eve ✨"
 }
 
-# Updated Initial-Based Login Route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        # Grab initials, clean spaces, and make uppercase
         initials = request.form.get('initials').strip().upper()
-        
         user = User.query.filter_by(initials=initials).first()
         if user:
             session['user_id'] = user.id
             session['user_name'] = user.name
             session['user_role'] = user.role
             return redirect(url_for('index'))
-        
-        flash('Initials not found. Contact management to register.', 'error')
+        flash('Initials not found. Ask a manager to add you to the panel roster.', 'error')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -96,6 +91,33 @@ def index():
                            shifts_by_day=shifts_by_day, holidays_by_day=holidays_by_day,
                            theme=MONTH_THEMES[month], month_name=calendar.month_name[month], year=year)
 
+# 🆕 NEW WORKSPACE: Secure Manager-Only Staff Directory Registration Panel
+@app.route('/admin/register', methods=['GET', 'POST'])
+def register_staff():
+    if session.get('user_role') != 'Manager':
+        flash('Access Denied: Managers only.', 'error')
+        return redirect(url_for('index'))
+        
+    if request.method == 'POST':
+        full_name = request.form.get('name').strip()
+        initials = request.form.get('initials').strip().upper()
+        role = request.form.get('role')
+        
+        # Validation checks
+        if len(initials) != 3:
+            flash('Error: Initials must be exactly 3 characters.', 'error')
+        elif User.query.filter_by(initials=initials).first():
+            flash(f'Error: Initials "{initials}" are already taken.', 'error')
+        else:
+            new_user = User(name=full_name, initials=initials, role=role)
+            db.session.add(new_user)
+            db.session.commit()
+            flash(f'Successfully added {full_name} ({initials}) to the system!', 'success')
+            
+    # Fetch all registered users to display a complete table roster
+    all_users = User.query.order_by(User.role.desc(), User.name).all()
+    return render_template('register.html', users=all_users)
+
 @app.route('/claim/<int:shift_id>', methods=['POST'])
 def claim_shift(shift_id):
     if 'user_id' not in session: return redirect(url_for('login'))
@@ -118,17 +140,14 @@ def review_shift(shift_id, action):
         db.session.commit()
     return redirect(url_for('index'))
 
-# Updated Database Seeding with Initials
 @app.route('/seed-database-xyz')
 def seed():
-    db.drop_all() # Resets old data layout completely to accept initials structure
+    db.drop_all()
     db.create_all()
     
-    # Create sample staff members with 3 initials
-    mgr = User(name="Alice Manager", initials="AMW", role="Manager")
-    nurse1 = User(name="John Doe, RN", initials="JDE", role="Staff")
-    nurse2 = User(name="Sarah Smith, LPN", initials="SJS", role="Staff")
-    db.session.add_all([mgr, nurse1, nurse2])
+    # ⚠️ SEEDING ONE SUPER MANAGER INITIAL: Use this initial to log in first and register others!
+    super_manager = User(name="Head Administrator", initials="ADM", role="Manager")
+    db.session.add(super_manager)
     
     today = datetime.today()
     sample_shifts = [
@@ -138,7 +157,7 @@ def seed():
     ]
     db.session.add_all(sample_shifts)
     db.session.commit()
-    return "Database completely reset and updated with 3-initial login profiles!"
+    return "Database wiped and initialized. Log in using 'ADM' to access the registration dashboard."
 
 if __name__ == '__main__':
     with app.app_context(): db.create_all()
