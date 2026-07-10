@@ -64,40 +64,51 @@ HOLIDAYS_FIXED = {
     "12-25": "Christmas 🎄", "12-31": "NYE ✨"
 }
 
+# 1. Updated Main Home Calendar Route (Supports Multi-Month Navigation)
 @app.route('/')
 def index():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    
+    if 'user_id' not in session: 
+        return redirect(url_for('login'))
+        
     today = datetime.today()
-    year, month = today.year, today.month
+    year = today.year
+    
+    # Check if a user clicked a specific month; otherwise, default to the current month
+    month = request.args.get('month', default=today.month, type=int)
+    if month < 1 or month > 12:
+        month = today.month
+        
     month_key = f"{year}-{month:02d}"
     
     start_date_str = f"{year}-{month:02d}-01"
     end_date_str = f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]}"
     
-    # Query all base shifts for the month
-    db_shifts = Shift.query.filter(Shift.date >= start_date_str, Shift.date <= end_date_str).all()
-    
-    shifts_by_day = {}
-    for shift in db_shifts:
-        day_num = int(shift.date.split('-')[2])
-        if day_num not in shifts_by_day: shifts_by_day[day_num] = []
-        shifts_by_day[day_num].append(shift)
+    # Loop and create shift framework templates for all 12 months of the year
+    for m in range(1, 13):
+        num_days = calendar.monthrange(year, m)[1]
+        for day in range(1, num_days + 1):
+            day_str = f"{year}-{m:02d}-{day:02d}"
+            db.session.add(Shift(date=day_str, time_slot="7 AM - 7 PM"))
+            db.session.add(Shift(date=day_str, time_slot="7 PM - 7 AM"))
 
-    # Fetch finalization check status
+    # Fetch finalization check status for this specific month
     status_record = MonthStatus.query.filter_by(month_key=month_key).first()
     is_finalized = status_record.is_finalized if status_record else False
 
-    # Get roster available list for the manager reassignment action dropdown menus
+    # Get user lists and holidays for rendering
     all_users = User.query.filter_by(role='Staff').order_by(User.name).all()
-
     holidays_by_day = {d: HOLIDAYS_FIXED[f"{month:02d}-{d:02d}"] for d in range(1, 32) if f"{month:02d}-{d:02d}" in HOLIDAYS_FIXED}
+    
     cal = calendar.Calendar(firstweekday=6)
+    
+    # Generate a list of all 12 month names paired with their number for the top buttons
+    all_months_list = [(i, calendar.month_name[i]) for i in range(1, 13)]
     
     return render_template('index.html', days=list(cal.itermonthdays(year, month)), 
                            shifts_by_day=shifts_by_day, holidays_by_day=holidays_by_day,
-                           theme=MONTH_THEMES[month], month_name=calendar.month_name[month], 
-                           year=year, is_finalized=is_finalized, all_users=all_users, month_key=month_key)
+                           theme=MONTH_THEMES[month], month_name=calendar.month_name[month], current_month_num=month,
+                           year=year, is_finalized=is_finalized, all_users=all_users, month_key=month_key,
+                           all_months_list=all_months_list)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -188,9 +199,9 @@ def reassign_staff():
 
     return redirect(url_for('index'))
 
-# NEW METHOD: Lock / Finalize Entire Current Month Framework Toggle
+# Updated Month Lock Switch (Preserves current view perspective)
 @app.route('/manager/finalize/<month_key>/<int:status>')
-def finalize_month(month_key, status):
+def finalize_month(month_key):
     if session.get('user_role') != 'Manager': return redirect(url_for('index'))
     
     record = MonthStatus.query.filter_by(month_key=month_key).first()
@@ -200,9 +211,11 @@ def finalize_month(month_key, status):
         
     record.is_finalized = True if status == 1 else False
     db.session.commit()
+    
+    # Extract month number out of key string to pass back into the redirection arguments
+    current_view_month = int(month_key.split('-')[1])
     flash('Schedule distribution state adjustments updated!', 'success')
-    return redirect(url_for('index'))
-
+    return redirect(url_for('index', month=current_view_month))
 @app.route('/admin/register', methods=['GET', 'POST'])
 def register_staff():
     if session.get('user_role') != 'Manager': return redirect(url_for('index'))
