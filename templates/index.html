@@ -3,23 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visual Scheduling Framework</title>
+    <title>Scheduling Matrix Portal</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
 <body class="bg-slate-50 text-slate-800 p-4 min-h-screen">
     <div class="max-w-7xl mx-auto">
         
-        <!-- Top Status Alert Banner Component -->
         {% if is_finalized %}
-        <div class="w-full bg-emerald-600 text-white font-black text-center py-3 px-4 rounded-xl shadow-md mb-4 uppercase tracking-widest text-sm flex items-center justify-center gap-2 animate-bounce">
+        <div class="w-full bg-emerald-600 text-white font-black text-center py-3 px-4 rounded-xl shadow-md mb-4 uppercase tracking-widest text-sm flex items-center justify-center gap-2">
             📢 CONFIRMED: This Month's Schedule Has Been Formally Approved & Finalized! 🎉
         </div>
         {% endif %}
 
-        <!-- Navbar Controls Workspace Component -->
         <header class="flex justify-between items-center mb-4 bg-white shadow-xs border border-slate-200 rounded-xl p-4">
             <div>
-                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Profile Connection</p>
+                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Connection Profile</p>
                 <p class="text-sm font-bold text-slate-700">{{ session['user_name'] }} (<span class="text-indigo-600">{{ session['user_role'] }}</span>)</p>
             </div>
             <div class="flex items-center gap-2">
@@ -35,62 +33,49 @@
             </div>
         </header>
 
-        <!-- Month Selector Navigation Ribbon -->
         <div class="mb-4 bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs overflow-x-auto flex gap-1.5 scrollbar-thin">
             {% for m_num, m_name in all_months_list %}
-                <a href="/?month={{ m_num }}" 
-                   class="px-4 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap border
-                   {% if m_num == current_month_num %}
-                       bg-indigo-600 border-indigo-600 text-white shadow-xs
-                   {% else %}
-                       bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600
-                   {% endif %}">
+                <a href="/?month={{ m_num }}" class="px-4 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap border {% if m_num == current_month_num %} bg-indigo-600 border-indigo-600 text-white {% else %} bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600 {% endif %}">
                     {{ m_name }}
                 </a>
             {% endfor %}
         </div>
 
-        <!-- Themed Graphic Month Layout Header -->
         <div class="bg-gradient-to-r {{ theme.bg }} text-white rounded-2xl p-6 mb-6 shadow-md relative overflow-hidden flex items-center justify-between">
             <div>
-                <span class="text-xs font-bold uppercase tracking-widest bg-white/20 px-2.5 py-1 rounded-full backdrop-blur-xs">{{ year }} System Engine</span>
+                <span class="text-xs font-bold uppercase tracking-widest bg-white/20 px-2.5 py-1 rounded-full backdrop-blur-xs">{{ year }} Engine</span>
                 <h2 class="text-4xl font-black mt-2 tracking-tight">{{ month_name }}</h2>
                 <p class="text-white/80 text-sm mt-1 font-medium">{{ theme.sub }}</p>
             </div>
-            <div class="text-7xl opacity-30 select-none font-bold">
-                {{ theme.emoji }}
-            </div>
+            <div class="text-7xl opacity-30 select-none font-bold">{{ theme.emoji }}</div>
         </div>
 
-        {% with messages = get_flashed_messages() %}
-          {% if messages %}
-            {% for msg in messages %}
-              <div class="p-4 mb-6 text-sm font-semibold rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 shadow-sm">{{ msg }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
-
-        <!-- Main 7-Day Grid Container Core Matrix -->
         <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
             <div class="grid grid-cols-7 text-center bg-slate-50 font-bold text-slate-500 border-b border-slate-200 text-xs tracking-wider uppercase p-3">
                 <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
             </div>
             
-           <div class="grid grid-cols-7 auto-rows-min md:auto-rows-[240px] bg-slate-200 gap-[1px]">>
+            <div class="grid grid-cols-7 auto-rows-min md:auto-rows-[280px] bg-slate-200 gap-[1px]">
                 {% for day in days %}
                 <div class="bg-white p-1.5 flex flex-col relative {% if day == 0 %}bg-slate-50/60{% endif %}">
                     {% if day != 0 %}
-                        <div class="flex justify-between items-center mb-1">
+                        <div class="flex justify-between items-start mb-1">
                             <span class="font-bold text-slate-400 text-sm">{{ day }}</span>
-                            {% if day in holidays_by_day %}
-                                <span class="bg-red-50 text-red-600 border border-red-100 text-[9px] px-1.5 py-0.5 rounded font-bold truncate max-w-[80px]">
-                                    {{ holidays_by_day[day] }}
-                                </span>
+                            
+                            <!-- MANAGER ONLY ROLE METRIC COUNTERS WORKSPACE -->
+                            {% if session['user_role'] == 'Manager' and daily_metrics[day]['total'] > 0 %}
+                            <div class="bg-slate-900 text-white font-mono text-[9px] px-1.5 py-1 rounded-md flex flex-col gap-0.5 leading-none text-right shadow-xs">
+                                <span class="font-bold text-indigo-300 border-b border-slate-700 pb-0.5 mb-0.5">Total: {{ daily_metrics[day]['total'] }}</span>
+                                <span>RN: {{ daily_metrics[day]['nurses'] }}</span>
+                                <span>UC: {{ daily_metrics[day]['clerks'] }}</span>
+                                <span>NT: {{ daily_metrics[day]['techs'] }}</span>
+                            </div>
+                            {% elif day in holidays_by_day %}
+                                <span class="bg-red-50 text-red-600 border border-red-100 text-[9px] px-1.5 py-0.5 rounded font-bold truncate max-w-[75px]">{{ holidays_by_day[day] }}</span>
                             {% endif %}
                         </div>
                         
-                        <!-- Internal Shift Grid Output Node Block -->
-                        <div class="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
+                        <div class="flex-1 overflow-y-auto space-y-1.5 pr-0.5 mt-1">
                             {% if day in shifts_by_day %}
                                 {% for shift in shifts_by_day[day] %}
                                 <div class="p-1.5 rounded-lg text-xs bg-slate-50 border border-slate-200 flex flex-col gap-1">
@@ -103,13 +88,11 @@
                                         {% endif %}
                                     </div>
 
-                                    <!-- Render list of all active employee roster signups on this block -->
                                     <div class="space-y-1 mt-1">
                                         {% for claim in shift.claims %}
                                         <div class="p-1 rounded text-[10px] flex flex-col border {% if claim.status == 'Approved' %} bg-emerald-50 border-emerald-200 text-emerald-900 {% else %} bg-amber-50 border-amber-200 text-amber-900 {% endif %}">
                                             <div class="flex justify-between items-center font-bold">
-                                                <span>👤 {{ claim.user.initials }} ({% if claim.status == 'Approved' %}✔{% else %}?{% endif %})</span>
-                                                
+                                                <span title="{{ claim.user.name }} - {{ claim.user.title }}">👤 {{ claim.user.initials }} <span class="text-[8px] font-normal text-slate-400">({{ claim.user.title }})</span></span>
                                                 {% if session['user_role'] == 'Manager' and not is_finalized %}
                                                 <div class="flex gap-0.5 text-[8px]">
                                                     {% if claim.status == 'Pending Approval' %}
@@ -120,11 +103,9 @@
                                                 {% endif %}
                                             </div>
 
-                                            <!-- Move Person Day Assignment Form (Visible to Manager Only) -->
                                             {% if session['user_role'] == 'Manager' and not is_finalized %}
                                             <form action="/manager/reassign" method="POST" class="mt-1 border-t border-slate-200 pt-1 flex flex-col gap-0.5">
                                                 <input type="hidden" name="claim_id" value="{{ claim.id }}">
-                                                <div class="text-[8px] font-semibold text-slate-400 uppercase">Move To Day:</div>
                                                 <div class="flex gap-1">
                                                     <input type="number" name="target_date_day" min="1" max="31" required placeholder="Day" class="w-10 bg-white border border-slate-300 rounded text-[9px] px-0.5 text-center font-bold">
                                                     <select name="target_slot" class="bg-white border border-slate-300 rounded text-[8px] flex-1 font-medium">
@@ -149,7 +130,6 @@
             </div>
         </div>
 
-        <!-- Section: Directly Assign A User From Scratch Panel Interface Component -->
         {% if session['user_role'] == 'Manager' and not is_finalized %}
         <div class="mt-6 bg-white p-4 rounded-xl border border-slate-200 shadow-md max-w-md">
             <h3 class="font-black text-sm text-slate-800 mb-2">📥 Quick-Direct Force Assign Tool</h3>
@@ -158,7 +138,7 @@
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Select Employee</label>
                     <select name="user_id" required class="w-full border border-slate-300 rounded p-1.5 bg-white font-medium">
                         {% for user in all_users %}
-                        <option value="{{ user.id }}">{{ user.name }} ({{ user.initials }})</option>
+                        <option value="{{ user.id }}">{{ user.name }} ({{ user.initials }}) [{{ user.title }}]</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -175,9 +155,7 @@
                     </select>
                 </div>
                 <div class="col-span-4 mt-2">
-                    <button type="submit" onclick="this.form.target_date.value = this.form.target_date.value + String(this.form.target_day_num.value).padStart(2, '0');" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-1.5 rounded transition shadow-xs text-[11px]">
-                        Inject Direct Approved Booking Assignment
-                    </button>
+                    <button type="submit" onclick="this.form.target_date.value = this.form.target_date.value + String(this.form.target_day_num.value).padStart(2, '0');" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-1.5 rounded transition text-[11px]">Inject Direct Approved Assignment</button>
                 </div>
             </form>
         </div>
@@ -186,7 +164,6 @@
     </div>
     
     <script>
-        // Custom formatting controller to safely combine baseline string components
         document.querySelectorAll('form[action="/manager/reassign"]').forEach(form => {
             form.addEventListener('submit', function(e) {
                 let dayInput = form.querySelector('input[name="target_date_day"]');

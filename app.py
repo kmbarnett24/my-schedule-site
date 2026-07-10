@@ -20,12 +20,13 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     initials = db.Column(db.String(3), unique=True, nullable=False)
-    role = db.Column(db.String(20), default='Staff') # Staff or Manager
+    role = db.Column(db.String(20), default='Staff')       # Staff or Manager
+    title = db.Column(db.String(30), default='Nurse')      # Nurse, Unit Clerk, Nurse Tech
 
 class Shift(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.String(10), nullable=False) # Format: YYYY-MM-DD
-    time_slot = db.Column(db.String(50), nullable=False) # e.g., "7 AM - 7 PM"
+    date = db.Column(db.String(10), nullable=False)        # Format: YYYY-MM-DD
+    time_slot = db.Column(db.String(50), nullable=False)   # e.g., "7 AM - 7 PM"
     claims = db.relationship('ShiftClaim', backref='shift', cascade="all, delete-orphan")
 
 class ShiftClaim(db.Model):
@@ -68,13 +69,10 @@ def index():
         
     today = datetime.today()
     year = today.year
-    
     month = request.args.get('month', default=today.month, type=int)
-    if month < 1 or month > 12:
-        month = today.month
+    if month < 1 or month > 12: month = today.month
         
     month_key = f"{year}-{month:02d}"
-    
     start_date_str = f"{year}-{month:02d}-01"
     end_date_str = f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]}"
     
@@ -85,6 +83,21 @@ def index():
         day_num = int(shift.date.split('-')[2])
         if day_num not in shifts_by_day: shifts_by_day[day_num] = []
         shifts_by_day[day_num].append(shift)
+
+    # Calculate Totals Matrix per day for the Manager Dashboard view
+    # Format: day_num -> {'total': X, 'nurses': X, 'clerks': X, 'techs': X}
+    daily_metrics = {}
+    for d in range(1, 32):
+        daily_metrics[d] = {'total': 0, 'nurses': 0, 'clerks': 0, 'techs': 0}
+        
+    for shift in db_shifts:
+        day_num = int(shift.date.split('-')[2])
+        for claim in shift.claims:
+            # Only count confirmed or pending sign-ups in metrics calculations
+            daily_metrics[day_num]['total'] += 1
+            if claim.user.title == 'Nurse': daily_metrics[day_num]['nurses'] += 1
+            elif claim.user.title == 'Unit Clerk': daily_metrics[day_num]['clerks'] += 1
+            elif claim.user.title == 'Nurse Tech': daily_metrics[day_num]['techs'] += 1
 
     status_record = MonthStatus.query.filter_by(month_key=month_key).first()
     is_finalized = status_record.is_finalized if status_record else False
@@ -99,7 +112,7 @@ def index():
                            shifts_by_day=shifts_by_day, holidays_by_day=holidays_by_day,
                            theme=MONTH_THEMES[month], month_name=calendar.month_name[month], current_month_num=month,
                            year=year, is_finalized=is_finalized, all_users=all_users, month_key=month_key,
-                           all_months_list=all_months_list)
+                           all_months_list=all_months_list, daily_metrics=daily_metrics)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -122,32 +135,22 @@ def logout():
 @app.route('/claim/<int:shift_id>', methods=['POST'])
 def claim_shift(shift_id):
     if 'user_id' not in session: return redirect(url_for('login'))
-    
     shift = Shift.query.get(shift_id)
-    if not shift:
-        flash('Shift not found.', 'error')
-        return redirect(url_for('index'))
+    if not shift: return redirect(url_for('index'))
         
-    month_key = shift.date[:7] # Extracts YYYY-MM directly from shift date
+    month_key = shift.date[:7]
     status_record = MonthStatus.query.filter_by(month_key=month_key).first()
     if status_record and status_record.is_finalized:
-        flash('Schedule is locked! Changes cannot be processed for finalized months.', 'error')
-        current_view_month = int(month_key.split('-')[1])
-        return redirect(url_for('index', month=current_view_month))
+        flash('Schedule is locked!', 'error')
+        return redirect(url_for('index', month=int(month_key.split('-')[1])))
 
     user_id = session['user_id']
-    existing_claim = ShiftClaim.query.filter_by(shift_id=shift_id, user_id=user_id).first()
-    
-    if existing_claim:
-        flash('You have already requested a slot on this shift.', 'info')
-    else:
-        new_claim = ShiftClaim(shift_id=shift_id, user_id=user_id, status='Pending Approval')
-        db.session.add(new_claim)
+    if not ShiftClaim.query.filter_by(shift_id=shift_id, user_id=user_id).first():
+        db.session.add(ShiftClaim(shift_id=shift_id, user_id=user_id, status='Pending Approval'))
         db.session.commit()
         flash('Sign-up request recorded!', 'success')
         
-    current_view_month = int(month_key.split('-')[1])
-    return redirect(url_for('index', month=current_view_month))
+    return redirect(url_for('index', month=int(month_key.split('-')[1])))
 
 @app.route('/manager/review-claim/<int:claim_id>/<action>')
 def review_claim(claim_id, action):
@@ -156,10 +159,8 @@ def review_claim(claim_id, action):
     current_view_month = datetime.today().month
     if claim:
         current_view_month = int(claim.shift.date.split('-')[1])
-        if action == 'approve':
-            claim.status = 'Approved'
-        elif action == 'deny':
-            db.session.delete(claim)
+        if action == 'approve': claim.status = 'Approved'
+        elif action == 'deny': db.session.delete(claim)
         db.session.commit()
     return redirect(url_for('index', month=current_view_month))
 
@@ -173,11 +174,7 @@ def reassign_staff():
     target_slot = request.form.get('target_slot')
 
     target_shift = Shift.query.filter_by(date=target_date, time_slot=target_slot).first()
-    if not target_shift:
-        flash('Error mapping destination calendar day parameters.', 'error')
-        return redirect(url_for('index'))
-
-    current_view_month = int(target_date.split('-')[1])
+    if not target_shift: return redirect(url_for('index'))
 
     if claim_id:
         claim = ShiftClaim.query.get(claim_id)
@@ -185,30 +182,22 @@ def reassign_staff():
             claim.shift_id = target_shift.id
             claim.status = 'Approved'
             db.session.commit()
-            flash('Staff reassigned successfully!', 'success')
     elif user_id:
-        new_claim = ShiftClaim(shift_id=target_shift.id, user_id=user_id, status='Approved')
-        db.session.add(new_claim)
+        db.session.add(ShiftClaim(shift_id=target_shift.id, user_id=user_id, status='Approved'))
         db.session.commit()
-        flash('Staff assigned directly to target date block!', 'success')
 
-    return redirect(url_for('index', month=current_view_month))
+    return redirect(url_for('index', month=int(target_date.split('-')[1])))
 
 @app.route('/manager/finalize/<month_key>/<int:status>')
 def finalize_month(month_key, status):
     if session.get('user_role') != 'Manager': return redirect(url_for('index'))
-    
     record = MonthStatus.query.filter_by(month_key=month_key).first()
     if not record:
         record = MonthStatus(month_key=month_key)
         db.session.add(record)
-        
     record.is_finalized = True if status == 1 else False
     db.session.commit()
-    
-    current_view_month = int(month_key.split('-')[1])
-    flash('Schedule updates locked and broadcasted!', 'success')
-    return redirect(url_for('index', month=current_view_month))
+    return redirect(url_for('index', month=int(month_key.split('-')[1])))
 
 @app.route('/admin/register', methods=['GET', 'POST'])
 def register_staff():
@@ -217,8 +206,9 @@ def register_staff():
         full_name = request.form.get('name').strip()
         initials = request.form.get('initials').strip().upper()
         role = request.form.get('role')
+        title = request.form.get('title', 'Nurse')
         if len(initials) == 3 and not User.query.filter_by(initials=initials).first():
-            db.session.add(User(name=full_name, initials=initials, role=role))
+            db.session.add(User(name=full_name, initials=initials, role=role, title=title))
             db.session.commit()
     all_users = User.query.order_by(User.role.desc(), User.name).all()
     return render_template('register.html', users=all_users)
@@ -227,24 +217,17 @@ def register_staff():
 def seed():
     db.drop_all()
     db.create_all()
-    
-    super_manager = User(name="Head Administrator", initials="ADM", role="Manager")
-    db.session.add(super_manager)
-    
-    today = datetime.today()
-    year = today.year
-    
+    db.session.add(User(name="Head Administrator", initials="ADM", role="Manager", title="Nurse"))
+    year = datetime.today().year
     for m in range(1, 13):
         num_days = calendar.monthrange(year, m)[1]
         for day in range(1, num_days + 1):
             day_str = f"{year}-{m:02d}-{day:02d}"
             db.session.add(Shift(date=day_str, time_slot="7 AM - 7 PM"))
             db.session.add(Shift(date=day_str, time_slot="7 PM - 7 AM"))
-        
     db.session.commit()
-    return "Full 12-month schedule system architecture successfully initialized! Log in with 'ADM'."
+    return "Database completely reset and prepared with medical roles matrix! Sign in using 'ADM'."
 
-# Force-creates any missing database structure blocks on every system startup
 with app.app_context(): 
     db.create_all()
 
