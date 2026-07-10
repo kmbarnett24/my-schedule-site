@@ -7,7 +7,6 @@ import calendar
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'fallback-dev-key-123')
 
-# Database Setup
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///schedule.db')
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -16,139 +15,131 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Database Models
+# Updated User Model for 3 Initials
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(100), unique=True, nullable=False)
+    initials = db.Column(db.String(3), unique=True, nullable=False) # Stores exactly 3 letters
     role = db.Column(db.String(20), default='Staff') # Staff or Manager
 
 class Shift(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.String(10), nullable=False) # Format: YYYY-MM-DD
-    time_slot = db.Column(db.String(50), nullable=False) # e.g., "Day Shift (9am-5pm)"
+    date = db.Column(db.String(10), nullable=False)
+    time_slot = db.Column(db.String(50), nullable=False)
     claimed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    status = db.Column(db.String(20), default='Open') # Open, Pending, Approved
-
+    status = db.Column(db.String(20), default='Open')
     claimed_by = db.relationship('User', backref='shifts')
 
-# Login Route
+MONTH_THEMES = {
+    1: {"bg": "from-blue-900 to-indigo-900", "emoji": "❄️", "sub": "Fresh Starts & New Goals"},
+    2: {"bg": "from-rose-500 to-red-600", "emoji": "💖", "sub": "Share the Love & Stay Driven"},
+    3: {"bg": "from-emerald-600 to-green-700", "emoji": "🍀", "sub": "Springing Forward Together"},
+    4: {"bg": "from-cyan-500 to-teal-600", "emoji": "🌸", "sub": "April Showers & Productive Hours"},
+    5: {"bg": "from-amber-500 to-orange-600", "emoji": "☀️", "sub": "Gearing Up for Summer"},
+    6: {"bg": "from-sky-400 to-indigo-500", "emoji": "🌊", "sub": "Sunny Days & Smooth Operations"},
+    7: {"bg": "from-red-600 to-blue-700", "emoji": "🎆", "sub": "Mid-Summer Hustle"},
+    8: {"bg": "from-amber-600 to-yellow-500", "emoji": "🌻", "sub": "Sustaining Our Momentum"},
+    9: {"bg": "from-orange-700 to-amber-800", "emoji": "🍂", "sub": "Autumn Shifts & Crisp Air"},
+    10: {"bg": "from-purple-800 to-orange-700", "emoji": "🎃", "sub": "Spooky Good Teamwork"},
+    11: {"bg": "from-amber-800 to-amber-950", "emoji": "🦃", "sub": "Gratitude & High Performance"},
+    12: {"bg": "from-red-700 to-emerald-800", "emoji": "🎄", "sub": "Wrapping Up the Year Strong"}
+}
+
+HOLIDAYS_FIXED = {
+    "01-01": "New Year's Day 🎉", "07-04": "Independence Day 🎆", 
+    "10-31": "Halloween 🎃", "11-11": "Veterans Day 🎖️", 
+    "12-25": "Christmas Day 🎄", "12-31": "New Year's Eve ✨"
+}
+
+# Updated Initial-Based Login Route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        email = request.form.get('email').strip().lower()
-        user = User.query.filter_by(email=email).first()
+        # Grab initials, clean spaces, and make uppercase
+        initials = request.form.get('initials').strip().upper()
         
+        user = User.query.filter_by(initials=initials).first()
         if user:
             session['user_id'] = user.id
             session['user_name'] = user.name
             session['user_role'] = user.role
-            flash(f'Welcome back, {user.name}!', 'success')
             return redirect(url_for('index'))
-        else:
-            flash('Email not found. Contact management to add your profile.', 'error')
+        
+        flash('Initials not found. Contact management to register.', 'error')
     return render_template('login.html')
 
-# Logout Route
 @app.route('/logout')
 def logout():
     session.clear()
-    flash('You have logged out.', 'info')
     return redirect(url_for('login'))
 
-# Interactive Calendar Dashboard
 @app.route('/')
 def index():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    # Generate a visual calendar for the current month
+    if 'user_id' not in session: return redirect(url_for('login'))
     today = datetime.today()
     year, month = today.year, today.month
     
-    # Get all database shifts for this month
     start_date_str = f"{year}-{month:02d}-01"
     end_date_str = f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]}"
-    
     db_shifts = Shift.query.filter(Shift.date >= start_date_str, Shift.date <= end_date_str).all()
     
-    # Group shifts by day for easy front-end parsing
     shifts_by_day = {}
     for shift in db_shifts:
         day_num = int(shift.date.split('-')[2])
-        if day_num not in shifts_by_day:
-            shifts_by_day[day_num] = []
+        if day_num not in shifts_by_day: shifts_by_day[day_num] = []
         shifts_by_day[day_num].append(shift)
 
-    # Calendar generation arrays
-    cal = calendar.Calendar(firstweekday=6) # Start weeks on Sunday
-    month_days = cal.itermonthdays(year, month)
-    month_name = calendar.month_name[month]
+    holidays_by_day = {d: HOLIDAYS_FIXED[f"{month:02d}-{d:02d}"] for d in range(1, 32) if f"{month:02d}-{d:02d}" in HOLIDAYS_FIXED}
+    cal = calendar.Calendar(firstweekday=6)
+    
+    return render_template('index.html', days=list(cal.itermonthdays(year, month)), 
+                           shifts_by_day=shifts_by_day, holidays_by_day=holidays_by_day,
+                           theme=MONTH_THEMES[month], month_name=calendar.month_name[month], year=year)
 
-    return render_template('index.html', 
-                           days=list(month_days), 
-                           shifts_by_day=shifts_by_day, 
-                           month_name=month_name, 
-                           year=year)
-
-# Claim Shift Click Action
 @app.route('/claim/<int:shift_id>', methods=['POST'])
 def claim_shift(shift_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-        
+    if 'user_id' not in session: return redirect(url_for('login'))
     shift = Shift.query.get(shift_id)
     if shift and shift.status == 'Open':
         shift.claimed_by_id = session['user_id']
         shift.status = 'Pending Approval'
         db.session.commit()
-        flash('Shift claimed! Awaiting manager approval.', 'success')
     return redirect(url_for('index'))
 
-# Manager Control Direct Actions
 @app.route('/manager/review/<int:shift_id>/<action>')
 def review_shift(shift_id, action):
-    if session.get('user_role') != 'Manager':
-        flash('Access Denied.', 'error')
-        return redirect(url_for('index'))
-        
+    if session.get('user_role') != 'Manager': return redirect(url_for('index'))
     shift = Shift.query.get(shift_id)
     if shift and shift.status == 'Pending Approval':
-        if action == 'approve':
-            shift.status = 'Approved'
-            flash('Shift approved!', 'success')
+        if action == 'approve': shift.status = 'Approved'
         elif action == 'deny':
             shift.status = 'Open'
             shift.claimed_by_id = None
-            flash('Shift request denied and reopened.', 'info')
         db.session.commit()
     return redirect(url_for('index'))
 
-# Custom setup route to populate users and open mock shifts
+# Updated Database Seeding with Initials
 @app.route('/seed-database-xyz')
 def seed():
+    db.drop_all() # Resets old data layout completely to accept initials structure
     db.create_all()
-    if User.query.count() == 0:
-        # Create test users
-        mgr = User(name="Alice Manager", email="manager@company.com", role="Manager")
-        emp1 = User(name="John Staff", email="john@company.com", role="Staff")
-        emp2 = User(name="Sarah Staff", email="sarah@company.com", role="Staff")
-        db.session.add_all([mgr, emp1, emp2])
-        
-        # Create sample shifts for the current month
-        today = datetime.today()
-        sample_shifts = [
-            Shift(date=f"{today.year}-{today.month:02d}-12", time_slot="Day (9am-5pm)"),
-            Shift(date=f"{today.year}-{today.month:02d}-12", time_slot="Night (5pm-1am)"),
-            Shift(date=f"{today.year}-{today.month:02d}-15", time_slot="Day (9am-5pm)"),
-            Shift(date=f"{today.year}-{today.month:02d}-20", time_slot="Day (9am-5pm)"),
-        ]
-        db.session.add_all(sample_shifts)
-        db.session.commit()
-        return "Database successfully populated with staff login credentials and monthly shifts!"
-    return "Database has already been seeded."
+    
+    # Create sample staff members with 3 initials
+    mgr = User(name="Alice Manager", initials="AMW", role="Manager")
+    nurse1 = User(name="John Doe, RN", initials="JDE", role="Staff")
+    nurse2 = User(name="Sarah Smith, LPN", initials="SJS", role="Staff")
+    db.session.add_all([mgr, nurse1, nurse2])
+    
+    today = datetime.today()
+    sample_shifts = [
+        Shift(date=f"{today.year}-{today.month:02d}-12", time_slot="Day (7am-7pm)"),
+        Shift(date=f"{today.year}-{today.month:02d}-12", time_slot="Night (7pm-7am)"),
+        Shift(date=f"{today.year}-{today.month:02d}-15", time_slot="Day (7am-7pm)"),
+    ]
+    db.session.add_all(sample_shifts)
+    db.session.commit()
+    return "Database completely reset and updated with 3-initial login profiles!"
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
+    with app.app_context(): db.create_all()
     app.run(debug=True)
