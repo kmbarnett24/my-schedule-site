@@ -76,7 +76,7 @@
                 <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
             </div>
             
-            <div class="grid grid-cols-7 auto-rows-[240px] bg-slate-200 gap-[1px]">
+           <div class="grid grid-cols-7 auto-rows-min md:auto-rows-[240px] bg-slate-200 gap-[1px]">>
                 {% for day in days %}
                 <div class="bg-white p-1.5 flex flex-col relative {% if day == 0 %}bg-slate-50/60{% endif %}">
                     {% if day != 0 %}
