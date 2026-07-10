@@ -1,113 +1,152 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
+import os
+from datetime import datetime
+import calendar
 
 app = Flask(__name__)
-app.secret_key = 'super-secure-key-123'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///calendar_schedule.db'
+app.secret_key = os.environ.get('SECRET_KEY', 'fallback-dev-key-123')
+
+# Database Setup
+db_url = os.environ.get('DATABASE_URL', 'sqlite:///schedule.db')
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Database Architecture
+# Database Models
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(100), unique=True, nullable=False)
+    role = db.Column(db.String(20), default='Staff') # Staff or Manager
+
 class Shift(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    date_str = db.Column(db.String(20), nullable=False) # YYYY-MM-DD
-    month_name = db.Column(db.String(20), nullable=False)
-    day_number = db.Column(db.Integer, nullable=False)
-    shift_type = db.Column(db.String(10), nullable=False) # Day or Night
-    time_slot = db.Column(db.String(30), nullable=False)  # 07:00 - 19:00 or 19:00 - 07:00
-    claimed_by = db.Column(db.String(100), default=None, nullable=True)
-    requested_off = db.Column(db.String(200), default="", nullable=True) # Holds comma-separated names with "R"
-    status = db.Column(db.String(20), default='Open')     # Open, Pending, Approved
+    date = db.Column(db.String(10), nullable=False) # Format: YYYY-MM-DD
+    time_slot = db.Column(db.String(50), nullable=False) # e.g., "Day Shift (9am-5pm)"
+    claimed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    status = db.Column(db.String(20), default='Open') # Open, Pending, Approved
 
+    claimed_by = db.relationship('User', backref='shifts')
+
+# Login Route
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email').strip().lower()
+        user = User.query.filter_by(email=email).first()
+        
+        if user:
+            session['user_id'] = user.id
+            session['user_name'] = user.name
+            session['user_role'] = user.role
+            flash(f'Welcome back, {user.name}!', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('Email not found. Contact management to add your profile.', 'error')
+    return render_template('login.html')
+
+# Logout Route
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('You have logged out.', 'info')
+    return redirect(url_for('login'))
+
+# Interactive Calendar Dashboard
 @app.route('/')
 def index():
-    db.create_all()
-    
-    # Auto-generate 2026 calendar baseline on launch if empty
-    if Shift.query.count() == 0:
-        current_year = 2026
-        start_date = datetime(current_year, 1, 1)
-        end_date = datetime(current_year, 12, 31)
-        delta = end_date - start_date
-        
-        all_shifts = []
-        for i in range(delta.days + 1):
-            day_ctx = start_date + timedelta(days=i)
-            d_str = day_ctx.strftime('%Y-%m-%d')
-            m_name = day_ctx.strftime('%B')
-            d_num = day_ctx.day
-            
-            # Setup Day Matrix
-            all_shifts.append(Shift(date_str=d_str, month_name=m_name, day_number=d_num, shift_type='Day', time_slot='07:00 - 19:00'))
-            # Setup Night Matrix
-            all_shifts.append(Shift(date_str=d_str, month_name=m_name, day_number=d_num, shift_type='Night', time_slot='19:00 - 07:00'))
-            
-        db.session.add_all(all_shifts)
-        db.session.commit()
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
 
-    # Get active filter month (default to current calendar month)
-    selected_month = request.args.get('month', datetime.now().strftime('%B'))
+    # Generate a visual calendar for the current month
+    today = datetime.today()
+    year, month = today.year, today.month
     
-    # Package shifts nicely for calendar UI
-    shifts_in_month = Shift.query.filter_by(month_name=selected_month).order_by(Shift.day_number).all()
+    # Get all database shifts for this month
+    start_date_str = f"{year}-{month:02d}-01"
+    end_date_str = f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]}"
     
-    # Structure days: { day_number: { 'Day': shift_obj, 'Night': shift_obj } }
-    calendar_days = {}
-    for s in shifts_in_month:
-        if s.day_number not in calendar_days:
-            calendar_days[s.day_number] = {}
-        calendar_days[s.day_number][s.shift_type] = s
+    db_shifts = Shift.query.filter(Shift.date >= start_date_str, Shift.date <= end_date_str).all()
+    
+    # Group shifts by day for easy front-end parsing
+    shifts_by_day = {}
+    for shift in db_shifts:
+        day_num = int(shift.date.split('-')[2])
+        if day_num not in shifts_by_day:
+            shifts_by_day[day_num] = []
+        shifts_by_day[day_num].append(shift)
 
-    months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-    return render_template('index.html', calendar_days=calendar_days, current_month=selected_month, months=months)
+    # Calendar generation arrays
+    cal = calendar.Calendar(firstweekday=6) # Start weeks on Sunday
+    month_days = cal.itermonthdays(year, month)
+    month_name = calendar.month_name[month]
 
-# Staff Claim Action
+    return render_template('index.html', 
+                           days=list(month_days), 
+                           shifts_by_day=shifts_by_day, 
+                           month_name=month_name, 
+                           year=year)
+
+# Claim Shift Click Action
 @app.route('/claim/<int:shift_id>', methods=['POST'])
 def claim_shift(shift_id):
-    staff_name = request.form.get('staff_name').strip()
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
     shift = Shift.query.get(shift_id)
-    if shift and shift.status == 'Open' and staff_name:
-        shift.claimed_by = staff_name
-        shift.status = 'Pending'
+    if shift and shift.status == 'Open':
+        shift.claimed_by_id = session['user_id']
+        shift.status = 'Pending Approval'
         db.session.commit()
-        flash(f'Requested {shift.shift_type} shift on day {shift.day_number}!', 'success')
-    return redirect(url_for('index', month=shift.month_name))
+        flash('Shift claimed! Awaiting manager approval.', 'success')
+    return redirect(url_for('index'))
 
-# Staff Add "R" Appointment Restriction Action
-@app.route('/request-off/<int:shift_id>', methods=['POST'])
-def request_off(shift_id):
-    staff_name = request.form.get('staff_name').strip()
-    shift = Shift.query.get(shift_id)
-    if shift and staff_name:
-        current_list = [name.strip() for name in shift.requested_off.split(',') if name.strip()]
-        if staff_name not in current_list:
-            current_list.append(staff_name)
-            shift.requested_off = ", ".join(current_list)
-            db.session.commit()
-            flash(f'Marked "R" for {staff_name} on {shift.date_str} ({shift.shift_type})!', 'info')
-    return redirect(url_for('index', month=shift.month_name))
-
-# Manager Portal
-@app.route('/manager')
-def manager_dashboard():
-    selected_month = request.args.get('month', datetime.now().strftime('%B'))
-    pending_shifts = Shift.query.filter_by(status='Pending', month_name=selected_month).all()
-    all_shifts = Shift.query.filter_by(month_name=selected_month).order_by(Shift.day_number).all()
-    months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-    return render_template('manager.html', pending_shifts=pending_shifts, all_shifts=all_shifts, current_month=selected_month, months=months)
-
+# Manager Control Direct Actions
 @app.route('/manager/review/<int:shift_id>/<action>')
 def review_shift(shift_id, action):
+    if session.get('user_role') != 'Manager':
+        flash('Access Denied.', 'error')
+        return redirect(url_for('index'))
+        
     shift = Shift.query.get(shift_id)
-    if shift:
+    if shift and shift.status == 'Pending Approval':
         if action == 'approve':
             shift.status = 'Approved'
+            flash('Shift approved!', 'success')
         elif action == 'deny':
             shift.status = 'Open'
-            shift.claimed_by = None
+            shift.claimed_by_id = None
+            flash('Shift request denied and reopened.', 'info')
         db.session.commit()
-    return redirect(url_for('manager_dashboard', month=shift.month_name))
+    return redirect(url_for('index'))
+
+# Custom setup route to populate users and open mock shifts
+@app.route('/seed-database-xyz')
+def seed():
+    db.create_all()
+    if User.query.count() == 0:
+        # Create test users
+        mgr = User(name="Alice Manager", email="manager@company.com", role="Manager")
+        emp1 = User(name="John Staff", email="john@company.com", role="Staff")
+        emp2 = User(name="Sarah Staff", email="sarah@company.com", role="Staff")
+        db.session.add_all([mgr, emp1, emp2])
+        
+        # Create sample shifts for the current month
+        today = datetime.today()
+        sample_shifts = [
+            Shift(date=f"{today.year}-{today.month:02d}-12", time_slot="Day (9am-5pm)"),
+            Shift(date=f"{today.year}-{today.month:02d}-12", time_slot="Night (5pm-1am)"),
+            Shift(date=f"{today.year}-{today.month:02d}-15", time_slot="Day (9am-5pm)"),
+            Shift(date=f"{today.year}-{today.month:02d}-20", time_slot="Day (9am-5pm)"),
+        ]
+        db.session.add_all(sample_shifts)
+        db.session.commit()
+        return "Database successfully populated with staff login credentials and monthly shifts!"
+    return "Database has already been seeded."
 
 if __name__ == '__main__':
     with app.app_context():
