@@ -17,7 +17,7 @@
         {% endif %}
 
         <!-- Navbar Controls Workspace Component -->
-        <header class="flex justify-between items-center mb-6 bg-white shadow-xs border border-slate-200 rounded-xl p-4">
+        <header class="flex justify-between items-center mb-4 bg-white shadow-xs border border-slate-200 rounded-xl p-4">
             <div>
                 <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Profile Connection</p>
                 <p class="text-sm font-bold text-slate-700">{{ session['user_name'] }} (<span class="text-indigo-600">{{ session['user_role'] }}</span>)</p>
@@ -35,20 +35,20 @@
             </div>
         </header>
 
-<!-- Month Selector Ribbon -->
-<div class="mb-4 bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs overflow-x-auto flex gap-1.5 scrollbar-thin">
-    {% for m_num, m_name in all_months_list %}
-        <a href="/?month={{ m_num }}" 
-           class="px-4 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap border
-           {% if m_num == current_month_num %}
-               bg-indigo-600 border-indigo-600 text-white shadow-xs
-           {% else %}
-               bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600
-           {% endif %}">
-            {{ m_name }}
-        </a>
-    {% endfor %}
-</div>
+        <!-- Month Selector Navigation Ribbon -->
+        <div class="mb-4 bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs overflow-x-auto flex gap-1.5 scrollbar-thin">
+            {% for m_num, m_name in all_months_list %}
+                <a href="/?month={{ m_num }}" 
+                   class="px-4 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap border
+                   {% if m_num == current_month_num %}
+                       bg-indigo-600 border-indigo-600 text-white shadow-xs
+                   {% else %}
+                       bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600
+                   {% endif %}">
+                    {{ m_name }}
+                </a>
+            {% endfor %}
+        </div>
 
         <!-- Themed Graphic Month Layout Header -->
         <div class="bg-gradient-to-r {{ theme.bg }} text-white rounded-2xl p-6 mb-6 shadow-md relative overflow-hidden flex items-center justify-between">
@@ -76,7 +76,7 @@
                 <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
             </div>
             
-            <div class="grid grid-cols-7 auto-rows-[220px] bg-slate-200 gap-[1px]">
+            <div class="grid grid-cols-7 auto-rows-[240px] bg-slate-200 gap-[1px]">
                 {% for day in days %}
                 <div class="bg-white p-1.5 flex flex-col relative {% if day == 0 %}bg-slate-50/60{% endif %}">
                     {% if day != 0 %}
@@ -96,7 +96,6 @@
                                 <div class="p-1.5 rounded-lg text-xs bg-slate-50 border border-slate-200 flex flex-col gap-1">
                                     <div class="font-black text-slate-700 text-[10px] flex justify-between items-center bg-slate-100 px-1 py-0.5 rounded">
                                         <span>{{ shift.time_slot }}</span>
-                                        <!-- Open Signup Interaction Actions -->
                                         {% if not is_finalized %}
                                         <form action="/claim/{{ shift.id }}" method="POST" class="inline">
                                             <button type="submit" class="text-[9px] bg-indigo-600 text-white font-bold px-1 rounded hover:bg-indigo-700 transition">Sign+ ({{ shift.claims|length }})</button>
@@ -111,7 +110,6 @@
                                             <div class="flex justify-between items-center font-bold">
                                                 <span>👤 {{ claim.user.initials }} ({% if claim.status == 'Approved' %}✔{% else %}?{% endif %})</span>
                                                 
-                                                <!-- Manager Validation and Change Management Tools Dropdown Menu Interface -->
                                                 {% if session['user_role'] == 'Manager' and not is_finalized %}
                                                 <div class="flex gap-0.5 text-[8px]">
                                                     {% if claim.status == 'Pending Approval' %}
@@ -128,13 +126,12 @@
                                                 <input type="hidden" name="claim_id" value="{{ claim.id }}">
                                                 <div class="text-[8px] font-semibold text-slate-400 uppercase">Move To Day:</div>
                                                 <div class="flex gap-1">
-                                                    <input type="number" name="target_date" min="1" max="31" required placeholder="Day" class="w-10 bg-white border border-slate-300 rounded text-[9px] px-0.5 text-center font-bold">
+                                                    <input type="number" name="target_date_day" min="1" max="31" required placeholder="Day" class="w-10 bg-white border border-slate-300 rounded text-[9px] px-0.5 text-center font-bold">
                                                     <select name="target_slot" class="bg-white border border-slate-300 rounded text-[8px] flex-1 font-medium">
                                                         <option value="7 AM - 7 PM">Day</option>
                                                         <option value="7 PM - 7 AM">Night</option>
                                                     </select>
-                                                    <!-- Build hidden helper timestamp variables formatting tracking -->
-                                                    <input type="hidden" name="target_date" value="{{ year }}-{{ "%02d"|format(shift.date.split('-')[1]|int) }}-">
+                                                    <input type="hidden" name="target_date" value="{{ year }}-{{ "%02d"|format(current_month_num) }}-">
                                                     <button type="submit" class="bg-slate-700 text-white font-bold px-1 rounded text-[8px]">Go</button>
                                                 </div>
                                             </form>
@@ -152,7 +149,7 @@
             </div>
         </div>
 
-        <!-- Section: Directly Assign A User From Scratch Panel Interface Component (Visible to Manager Only) -->
+        <!-- Section: Directly Assign A User From Scratch Panel Interface Component -->
         {% if session['user_role'] == 'Manager' and not is_finalized %}
         <div class="mt-6 bg-white p-4 rounded-xl border border-slate-200 shadow-md max-w-md">
             <h3 class="font-black text-sm text-slate-800 mb-2">📥 Quick-Direct Force Assign Tool</h3>
@@ -188,15 +185,14 @@
 
     </div>
     
-    <!-- Script fix configuration parsing target data formatting corrections -->
     <script>
+        // Custom formatting controller to safely combine baseline string components
         document.querySelectorAll('form[action="/manager/reassign"]').forEach(form => {
             form.addEventListener('submit', function(e) {
-                let dInput = form.querySelectorAll('input[name="target_date"]');
-                if(dInput.length === 2) {
-                    let base = dInput[1].value;
-                    let val = String(dInput[0].value).padStart(2, '0');
-                    dInput[1].value = base + val;
+                let dayInput = form.querySelector('input[name="target_date_day"]');
+                let targetInput = form.querySelector('input[name="target_date"]');
+                if(dayInput && targetInput) {
+                    targetInput.value = targetInput.value + String(dayInput.value).padStart(2, '0');
                 }
             });
         });
