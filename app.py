@@ -17,13 +17,11 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Database Structures
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    initials = db.Column(db.String(3), unique=True, nullable=False)
+    name = db.Column(db.String(100), unique=True, nullable=False)
     role = db.Column(db.String(20), default='Staff')        # Staff or Manager
-    title = db.Column(db.String(30), default='Nurse')       # Nurse, Unit Clerk, Nurse Tech
+    title = db.Column(db.String(30), default='Nurse')       # Nurse, Unit Clerk, Nurse Tech, PRN
     preferred_shift = db.Column(db.String(10), default='Day') # Day or Night
     standing_schedules = db.relationship('StandingSchedule', backref='user', cascade="all, delete-orphan")
 
@@ -95,8 +93,8 @@ def index():
     daily_metrics = {}
     for d in range(1, 32):
         daily_metrics[d] = {
-            'D_RN': 0, 'D_UC': 0, 'D_NT': 0,
-            'N_RN': 0, 'N_UC': 0, 'N_NT': 0,
+            'D_RN': 0, 'D_UC': 0, 'D_NT': 0, 'D_PRN': 0,
+            'N_RN': 0, 'N_UC': 0, 'N_NT': 0, 'N_PRN': 0,
             'is_weekend': False
         }
         
@@ -111,6 +109,7 @@ def index():
             if claim.user.title == 'Nurse': daily_metrics[day_num][prefix + 'RN'] += 1
             elif claim.user.title == 'Unit Clerk': daily_metrics[day_num][prefix + 'UC'] += 1
             elif claim.user.title == 'Nurse Tech': daily_metrics[day_num][prefix + 'NT'] += 1
+            elif claim.user.title == 'PRN': daily_metrics[day_num][prefix + 'PRN'] += 1
 
     status_record = MonthStatus.query.filter_by(month_key=month_key).first()
     is_finalized = status_record.is_finalized if status_record else False
@@ -130,19 +129,22 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        # Check for manager log in via initials entry field
-        manager_initials = request.form.get('manager_initials')
-        if manager_initials:
-            user = User.query.filter_by(initials=manager_initials.strip().upper(), role='Manager').first()
-            if user:
-                session['user_id'] = user.id
-                session['user_name'] = user.name
-                session['user_role'] = user.role
+        manager_code = request.form.get('manager_code')
+        if manager_code:
+            if manager_code.strip() == "9350":
+                # Ensure the default system manager is present in the database session dynamically
+                manager = User.query.filter_by(role='Manager').first()
+                if not manager:
+                    manager = User(name="System Manager", role="Manager", title="Manager", preferred_shift="Day")
+                    db.session.add(manager)
+                    db.session.commit()
+                session['user_id'] = manager.id
+                session['user_name'] = manager.name
+                session['user_role'] = manager.role
                 return redirect(url_for('index'))
-            flash('Invalid Manager Credentials.', 'error')
+            flash('Invalid Manager Code.', 'error')
             return redirect(url_for('login'))
 
-        # Standard staff dropdown profile selection
         user_id = request.form.get('user_id')
         user = User.query.get(user_id)
         if user and user.role == 'Staff':
@@ -256,12 +258,12 @@ def export_paycor(month_key):
     output = io.StringIO()
     writer = csv.writer(output)
     
-    writer.writerow(['Employee_ID_Initials', 'Shift_Date', 'Hours_Worked', 'Shift_Type_Code', 'Job_Title'])
+    writer.writerow(['Employee_Name', 'Shift_Date', 'Hours_Worked', 'Shift_Type_Code', 'Job_Title'])
     for s in shifts:
         for c in s.claims:
             if c.status == 'Approved':
                 shift_code = "DAY" if "7 AM" in s.time_slot else "NIGHT"
-                writer.writerow([c.user.initials, s.date, 12.0, shift_code, c.user.title])
+                writer.writerow([c.user.name, s.date, 12.0, shift_code, c.user.title])
                 
     response = Response(output.getvalue(), mimetype="text/csv")
     response.headers["Content-Disposition"] = f"attachment; filename=Paycor_Export_{month_key}.csv"
@@ -275,13 +277,13 @@ def register_staff():
         
         if action == 'register':
             full_name = request.form.get('name').strip()
-            initials = request.form.get('initials').strip().upper()
             role = request.form.get('role')
             title = request.form.get('title', 'Nurse')
             preferred_shift = request.form.get('preferred_shift', 'Day')
-            if len(initials) == 3 and not User.query.filter_by(initials=initials).first():
-                db.session.add(User(name=full_name, initials=initials, role=role, title=title, preferred_shift=preferred_shift))
+            if full_name and not User.query.filter_by(name=full_name).first():
+                db.session.add(User(name=full_name, role=role, title=title, preferred_shift=preferred_shift))
                 db.session.commit()
+                flash('Team member registered successfully!', 'success')
                 
         elif action == 'set_standing':
             user_id = request.form.get('user_id')
@@ -293,9 +295,22 @@ def register_staff():
                 db.session.commit()
                 flash('Standing schedule rule added successfully!', 'success')
 
-    all_users = User.query.order_by(User.role.desc(), User.name).all()
+    all_users = User.query.filter_by(role='Staff').order_by(User.name).all()
     standing_schedules = StandingSchedule.query.all()
     return render_template('register.html', users=all_users, standing_schedules=standing_schedules)
+
+@app.route('/admin/edit-staff/<int:user_id>', methods=['POST'])
+def edit_staff(user_id):
+    if session.get('user_role') != 'Manager': return redirect(url_for('index'))
+    user = User.query.get_or_404(user_id)
+    
+    user.name = request.form.get('name').strip()
+    user.title = request.form.get('title')
+    user.preferred_shift = request.form.get('preferred_shift')
+    
+    db.session.commit()
+    flash(f"Profile updated for {user.name}", "success")
+    return redirect(url_for('register_staff'))
 
 @app.route('/manager/apply-standing/<month_key>')
 def apply_standing(month_key):
@@ -326,8 +341,8 @@ def apply_standing(month_key):
 @app.route('/seed-database-xyz')
 def seed():
     db.create_all()
-    if not User.query.filter_by(initials="ADM").first():
-        db.session.add(User(name="Head Administrator", initials="ADM", role="Manager", title="Nurse", preferred_shift="Day"))
+    if not User.query.filter_by(role="Manager").first():
+        db.session.add(User(name="System Manager", role="Manager", title="Manager", preferred_shift="Day"))
     year = datetime.today().year
     for m in range(1, 13):
         num_days = calendar.monthrange(year, m)[1]

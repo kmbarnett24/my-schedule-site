@@ -36,13 +36,13 @@
                         
                         <optgroup label="☀️ Day Shift Staff Track">
                             {% for u in day_staff %}
-                            <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) - {{ u.title }}</option>
+                            <option value="{{ u.id }}">{{ u.name }} - {{ u.title }}</option>
                             {% endfor %}
                         </optgroup>
 
                         <optgroup label="🌙 Night Shift Staff Track">
                             {% for u in night_staff %}
-                            <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) - {{ u.title }}</option>
+                            <option value="{{ u.id }}">{{ u.name }} - {{ u.title }}</option>
                             {% endfor %}
                         </optgroup>
                     </select>
@@ -56,12 +56,12 @@
             </div>
         </div>
 
-        <!-- Manager Credentials Pane (Hidden by Default) -->
+        <!-- Manager Credentials Pane -->
         <div id="managerPane" class="hidden">
             <form action="/login" method="POST" class="space-y-4">
                 <div>
-                    <label class="block text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5">Manager Authorization ID</label>
-                    <input type="text" name="manager_initials" placeholder="Enter Administrative Initials (e.g. ADM)" required style="text-transform: uppercase;" class="w-full bg-slate-950 border border-slate-800 text-slate-200 text-center tracking-widest font-mono font-bold rounded-xl px-3 py-2.5 text-xs uppercase outline-none focus:border-purple-500 transition">
+                    <label class="block text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5">Manager Authorization Key</label>
+                    <input type="password" name="manager_code" maxlength="4" required class="w-full bg-slate-950 border border-slate-800 text-slate-200 text-center tracking-widest font-mono font-bold rounded-xl px-3 py-2.5 text-xs outline-none focus:border-purple-500 transition">
                 </div>
 
                 <button type="submit" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl transition text-xs tracking-wide shadow-lg mt-2">Verify Administrative Clearance</button>
