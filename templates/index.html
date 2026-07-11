@@ -1,334 +1,210 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, Response
-from flask_sqlalchemy import SQLAlchemy
-import os
-from datetime import datetime
-import calendar
-import csv
-import io
-
-app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'fallback-dev-key-123')
-
-db_url = os.environ.get('DATABASE_URL', 'sqlite:///schedule.db')
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
-
-# Database Structures
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    initials = db.Column(db.String(3), unique=True, nullable=False)
-    role = db.Column(db.String(20), default='Staff')        # Staff or Manager
-    title = db.Column(db.String(30), default='Nurse')       # Nurse, Unit Clerk, Nurse Tech
-    preferred_shift = db.Column(db.String(10), default='Day') # Day or Night
-    standing_schedules = db.relationship('StandingSchedule', backref='user', cascade="all, delete-orphan")
-
-class Shift(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.String(10), nullable=False)        # Format: YYYY-MM-DD
-    time_slot = db.Column(db.String(50), nullable=False)   # "7 AM - 7 PM" or "7 PM - 7 AM"
-    claims = db.relationship('ShiftClaim', backref='shift', cascade="all, delete-orphan")
-
-class ShiftClaim(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    status = db.Column(db.String(20), default='Pending Approval') # Pending Approval, Approved
-    user = db.relationship('User', backref='claims')
-
-class MonthStatus(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    month_key = db.Column(db.String(7), unique=True, nullable=False) # Format: "YYYY-MM"
-    is_finalized = db.Column(db.Boolean, default=False)
-
-class StandingSchedule(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    day_of_week = db.Column(db.Integer, nullable=False)    # 0=Monday, 6=Sunday
-    time_slot = db.Column(db.String(50), nullable=False)   # "7 AM - 7 PM" or "7 PM - 7 AM"
-
-MONTH_THEMES = {
-    1: {"bg": "from-blue-900 to-indigo-900", "emoji": "❄️", "sub": "Fresh Starts & New Goals"},
-    2: {"bg": "from-rose-500 to-red-600", "emoji": "💖", "sub": "Share the Love"},
-    3: {"bg": "from-emerald-600 to-green-700", "emoji": "🍀", "sub": "Springing Forward Together"},
-    4: {"bg": "from-cyan-500 to-teal-600", "emoji": "🌸", "sub": "April Productive Hours"},
-    5: {"bg": "from-amber-500 to-orange-600", "emoji": "☀️", "sub": "Gearing Up for Summer"},
-    6: {"bg": "from-sky-400 to-indigo-500", "emoji": "🌊", "sub": "Sunny Days Operations"},
-    7: {"bg": "from-red-600 to-blue-700", "emoji": "🎆", "sub": "Mid-Summer Hustle"},
-    8: {"bg": "from-amber-600 to-yellow-500", "emoji": "🌻", "sub": "Sustaining Our Momentum"},
-    9: {"bg": "from-orange-700 to-amber-800", "emoji": "🍂", "sub": "Autumn Shifts & Crisp Air"},
-    10: {"bg": "from-purple-800 to-orange-700", "emoji": "🎃", "sub": "Spooky Good Teamwork"},
-    11: {"bg": "from-amber-800 to-amber-950", "emoji": "🦃", "sub": "Gratitude & Performance"},
-    12: {"bg": "from-red-700 to-emerald-800", "emoji": "🎄", "sub": "Wrapping Up Strong"}
-}
-
-HOLIDAYS_FIXED = {
-    "01-01": "New Year 🎉", "07-04": "4th of July 🎆", "10-31": "Halloween 🎃",
-    "11-11": "Veterans Day 🎖️", "12-25": "Christmas 🎄", "12-31": "NYE ✨"
-}
-
-@app.route('/')
-def index():
-    if 'user_id' not in session: return redirect(url_for('login'))
-        
-    today = datetime.today()
-    year = today.year
-    month = request.args.get('month', default=today.month, type=int)
-    if month < 1 or month > 12: month = today.month
-        
-    month_key = f"{year}-{month:02d}"
-    start_date_str = f"{year}-{month:02d}-01"
-    end_date_str = f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]}"
-    
-    db_shifts = Shift.query.filter(Shift.date >= start_date_str, Shift.date <= end_date_str).all()
-    
-    shifts_by_day = {}
-    for shift in db_shifts:
-        day_num = int(shift.date.split('-')[2])
-        if day_num not in shifts_by_day: shifts_by_day[day_num] = []
-        shifts_by_day[day_num].append(shift)
-
-    daily_metrics = {}
-    for d in range(1, 32):
-        daily_metrics[d] = {
-            'D_RN': 0, 'D_UC': 0, 'D_NT': 0,
-            'N_RN': 0, 'N_UC': 0, 'N_NT': 0,
-            'is_weekend': False
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scheduling Matrix Portal</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        /* CSS Print Configuration Protocol Mapping */
+        @media print {
+            body { background: white; color: black; padding: 0; }
+            header, .no-print, form, button, .mb-4 { display: none !important; }
+            .max-w-7xl { max-width: 100% !important; width: 100% !important; }
+            .grid { gap: 0 !important; border: 1px solid #cbd5e1 !important; }
+            .bg-white { background: white !important; }
+            .auto-rows-[280px] { auto-rows: auto !important; min-height: 120px !important; }
         }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 p-4 min-h-screen">
+    <div class="max-w-7xl mx-auto">
         
-    for shift in db_shifts:
-        dt = datetime.strptime(shift.date, "%Y-%m-%d")
-        day_num = dt.day
-        is_we = dt.weekday() in [5, 6]
-        daily_metrics[day_num]['is_weekend'] = is_we
-        
-        prefix = 'D_' if "7 AM" in shift.time_slot else 'N_'
-        for claim in shift.claims:
-            if claim.user.title == 'Nurse': daily_metrics[day_num][prefix + 'RN'] += 1
-            elif claim.user.title == 'Unit Clerk': daily_metrics[day_num][prefix + 'UC'] += 1
-            elif claim.user.title == 'Nurse Tech': daily_metrics[day_num][prefix + 'NT'] += 1
+        {% if is_finalized %}
+        <div class="w-full bg-emerald-600 text-white font-black text-center py-3 px-4 rounded-xl shadow-md mb-4 uppercase tracking-widest text-sm flex items-center justify-center gap-2">
+            📢 CONFIRMED: This Month's Schedule Has Been Formally Approved & Finalized! 🎉
+        </div>
+        {% endif %}
 
-    status_record = MonthStatus.query.filter_by(month_key=month_key).first()
-    is_finalized = status_record.is_finalized if status_record else False
-
-    all_users = User.query.filter_by(role='Staff').order_by(User.name).all()
-    holidays_by_day = {d: HOLIDAYS_FIXED[f"{month:02d}-{d:02d}"] for d in range(1, 32) if f"{month:02d}-{d:02d}" in HOLIDAYS_FIXED}
-    
-    cal = calendar.Calendar(firstweekday=6)
-    all_months_list = [(i, calendar.month_name[i]) for i in range(1, 13)]
-    
-    return render_template('index.html', days=list(cal.itermonthdays(year, month)), 
-                           shifts_by_day=shifts_by_day, holidays_by_day=holidays_by_day,
-                           theme=MONTH_THEMES[month], month_name=calendar.month_name[month], current_month_num=month,
-                           year=year, is_finalized=is_finalized, all_users=all_users, month_key=month_key,
-                           all_months_list=all_months_list, daily_metrics=daily_metrics)
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        user_id = request.form.get('user_id')
-        user = User.query.get(user_id)
-        if user:
-            session['user_id'] = user.id
-            session['user_name'] = user.name
-            session['user_role'] = user.role
-            return redirect(url_for('index'))
-        flash('Invalid Profile Selection.', 'error')
-        
-    day_staff = User.query.filter_by(preferred_shift='Day').order_by(User.name).all()
-    night_staff = User.query.filter_by(preferred_shift='Night').order_by(User.name).all()
-    managers = User.query.filter_by(role='Manager').order_by(User.name).all()
-    return render_template('login.html', day_staff=day_staff, night_staff=night_staff, managers=managers)
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
-@app.route('/claim/<int:shift_id>', methods=['POST'])
-def claim_shift(shift_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
-    shift = Shift.query.get(shift_id)
-    if not shift: return redirect(url_for('index'))
-        
-    month_key = shift.date[:7]
-    status_record = MonthStatus.query.filter_by(month_key=month_key).first()
-    if status_record and status_record.is_finalized:
-        flash('Schedule is locked!', 'error')
-        return redirect(url_for('index', month=int(month_key.split('-')[1])))
-
-    dt = datetime.strptime(shift.date, "%Y-%m-%d")
-    is_weekend = dt.weekday() in [5, 6]
-    max_rn = 6 if is_weekend else 7
-    max_uc = 1 if is_weekend else 2
-
-    requesting_user = User.query.get(session['user_id'])
-    
-    current_rn = sum(1 for c in shift.claims if c.user.title == 'Nurse')
-    current_uc = sum(1 for c in shift.claims if c.user.title == 'Unit Clerk')
-
-    if requesting_user.title == 'Nurse' and current_rn >= max_rn:
-        flash(f'Cannot sign up! Nurse roster cap ({max_rn}) reached for this day.', 'error')
-        return redirect(url_for('index', month=dt.month))
-    if requesting_user.title == 'Unit Clerk' and current_uc >= max_uc:
-        flash(f'Cannot sign up! Unit Clerk roster cap ({max_uc}) reached for this day.', 'error')
-        return redirect(url_for('index', month=dt.month))
-
-    if not ShiftClaim.query.filter_by(shift_id=shift_id, user_id=requesting_user.id).first():
-        db.session.add(ShiftClaim(shift_id=shift_id, user_id=requesting_user.id, status='Pending Approval'))
-        db.session.commit()
-        flash('Sign-up request recorded!', 'success')
-        
-    return redirect(url_for('index', month=dt.month))
-
-@app.route('/manager/review-claim/<int:claim_id>/<action>')
-def review_claim(claim_id, action):
-    if session.get('user_role') != 'Manager': return redirect(url_for('index'))
-    claim = ShiftClaim.query.get(claim_id)
-    current_view_month = datetime.today().month
-    if claim:
-        current_view_month = int(claim.shift.date.split('-')[1])
-        if action == 'approve': claim.status = 'Approved'
-        elif action == 'deny': db.session.delete(claim)
-        db.session.commit()
-    return redirect(url_for('index', month=current_view_month))
-
-@app.route('/manager/reassign', methods=['POST'])
-def reassign_staff():
-    if session.get('user_role') != 'Manager': return redirect(url_for('index'))
-    
-    claim_id = request.form.get('claim_id')
-    user_id = request.form.get('user_id')
-    target_date = request.form.get('target_date')
-    target_slot = request.form.get('target_slot')
-
-    target_shift = Shift.query.filter_by(date=target_date, time_slot=target_slot).first()
-    if not target_shift: return redirect(url_for('index'))
-
-    if claim_id:
-        claim = ShiftClaim.query.get(claim_id)
-        if claim:
-            claim.shift_id = target_shift.id
-            claim.status = 'Approved'
-            db.session.commit()
-    elif user_id:
-        db.session.add(ShiftClaim(shift_id=target_shift.id, user_id=user_id, status='Approved'))
-        db.session.commit()
-
-    return redirect(url_for('index', month=int(target_date.split('-')[1])))
-
-@app.route('/manager/finalize/<month_key>/<int:status>')
-def finalize_month(month_key, status):
-    if session.get('user_role') != 'Manager': return redirect(url_for('index'))
-    record = MonthStatus.query.filter_by(month_key=month_key).first()
-    if not record:
-        record = MonthStatus(month_key=month_key)
-        db.session.add(record)
-    record.is_finalized = True if status == 1 else False
-    db.session.commit()
-    return redirect(url_for('index', month=int(month_key.split('-')[1])))
-
-@app.route('/manager/export/paycor/<month_key>')
-def export_paycor(month_key):
-    if session.get('user_role') != 'Manager': return "Unauthorized", 403
-    
-    start_date = f"{month_key}-01"
-    end_date = f"{month_key}-31"
-    
-    shifts = Shift.query.filter(Shift.date >= start_date, Shift.date <= end_date).all()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    
-    writer.writerow(['Employee_ID_Initials', 'Shift_Date', 'Hours_Worked', 'Shift_Type_Code', 'Job_Title'])
-    for s in shifts:
-        for c in s.claims:
-            if c.status == 'Approved':
-                shift_code = "DAY" if "7 AM" in s.time_slot else "NIGHT"
-                writer.writerow([c.user.initials, s.date, 12.0, shift_code, c.user.title])
+        <header class="flex justify-between items-center mb-4 bg-white shadow-xs border border-slate-200 rounded-xl p-4 no-print">
+            <div>
+                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Connection Profile</p>
+                <p class="text-sm font-bold text-slate-700">{{ session['user_name'] }} (<span class="text-indigo-600">{{ session['user_role'] }}</span>)</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="window.print();" class="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3 py-2 rounded-lg transition">🖨️ Print Schedule</button>
                 
-    response = Response(output.getvalue(), mimetype="text/csv")
-    response.headers["Content-Disposition"] = f"attachment; filename=Paycor_Export_{month_key}.csv"
-    return response
+                {% if session['user_role'] == 'Manager' %}
+                    <a href="/manager/export/paycor/{{ month_key }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-2 rounded-lg transition">📥 Paycor Export</a>
+                    <a href="/manager/apply-standing/{{ month_key }}" class="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3 py-2 rounded-lg transition">🔄 Load Standing Sets</a>
+                    {% if is_finalized %}
+                        <a href="/manager/finalize/{{ month_key }}/0" class="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs px-3 py-2 rounded-lg border border-rose-200 transition">🔓 Unfinalize</a>
+                    {% else %}
+                        <a href="/manager/finalize/{{ month_key }}/1" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs px-3 py-2 rounded-lg border border-emerald-200 transition">🔒 Finalize Month</a>
+                    {% endif %}
+                    <a href="/admin/register" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs px-3 py-2 rounded-lg border border-indigo-200 transition">⚙ Manage Roster</a>
+                {% endif %}
+                <a href="/logout" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-300 transition">Sign Out</a>
+            </div>
+        </header>
 
-@app.route('/admin/register', methods=['GET', 'POST'])
-def register_staff():
-    if session.get('user_role') != 'Manager': return redirect(url_for('index'))
-    if request.method == 'POST':
-        action = request.form.get('action')
-        
-        if action == 'register':
-            full_name = request.form.get('name').strip()
-            initials = request.form.get('initials').strip().upper()
-            role = request.form.get('role')
-            title = request.form.get('title', 'Nurse')
-            preferred_shift = request.form.get('preferred_shift', 'Day')
-            if len(initials) == 3 and not User.query.filter_by(initials=initials).first():
-                db.session.add(User(name=full_name, initials=initials, role=role, title=title, preferred_shift=preferred_shift))
-                db.session.commit()
-                
-        elif action == 'set_standing':
-            user_id = request.form.get('user_id')
-            day_of_week = int(request.form.get('day_of_week'))
-            time_slot = request.form.get('time_slot')
+        <div class="mb-4 bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs overflow-x-auto flex gap-1.5 scrollbar-thin no-print">
+            {% for m_num, m_name in all_months_list %}
+                <a href="/?month={{ m_num }}" class="px-4 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap border {% if m_num == current_month_num %} bg-indigo-600 border-indigo-600 text-white {% else %} bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600 {% endif %}">
+                    {{ m_name }}
+                </a>
+            {% endfor %}
+        </div>
+
+        <div class="bg-gradient-to-r {{ theme.bg }} text-white rounded-2xl p-6 mb-6 shadow-md relative overflow-hidden flex items-center justify-between">
+            <div>
+                <span class="text-xs font-bold uppercase tracking-widest bg-white/20 px-2.5 py-1 rounded-full backdrop-blur-xs">{{ year }} Engine</span>
+                <h2 class="text-4xl font-black mt-2 tracking-tight">{{ month_name }}</h2>
+                <p class="text-white/80 text-sm mt-1 font-medium">{{ theme.sub }}</p>
+            </div>
+            <div class="text-7xl opacity-30 select-none font-bold">{{ theme.emoji }}</div>
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            {% for msg in messages %}
+              <div class="p-4 mb-6 text-sm font-semibold rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 shadow-sm no-print">{{ msg }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <div class="grid grid-cols-7 text-center bg-slate-50 font-bold text-slate-500 border-b border-slate-200 text-xs tracking-wider uppercase p-3">
+                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+            </div>
             
-            if not StandingSchedule.query.filter_by(user_id=user_id, day_of_week=day_of_week, time_slot=time_slot).first():
-                db.session.add(StandingSchedule(user_id=user_id, day_of_week=day_of_week, time_slot=time_slot))
-                db.session.commit()
-                flash('Standing schedule rule added successfully!', 'success')
-
-    all_users = User.query.order_by(User.role.desc(), User.name).all()
-    standing_schedules = StandingSchedule.query.all()
-    return render_template('register.html', users=all_users, standing_schedules=standing_schedules)
-
-@app.route('/manager/apply-standing/<month_key>')
-def apply_standing(month_key):
-    if session.get('user_role') != 'Manager': return redirect(url_for('index'))
-    
-    year, month = map(int, month_key.split('-'))
-    num_days = calendar.monthrange(year, month)[1]
-    standings = StandingSchedule.query.all()
-    
-    count = 0
-    for day in range(1, num_days + 1):
-        date_str = f"{year}-{month:02d}-{day:02d}"
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-        day_of_week = dt.weekday()
-        
-        for rule in standings:
-            if rule.day_of_week == day_of_week:
-                shift = Shift.query.filter_by(date=date_str, time_slot=rule.time_slot).first()
-                if shift:
-                    if not ShiftClaim.query.filter_by(shift_id=shift.id, user_id=rule.user_id).first():
-                        db.session.add(ShiftClaim(shift_id=shift.id, user_id=rule.user_id, status='Approved'))
-                        count += 1
+            <div class="grid grid-cols-7 auto-rows-min md:auto-rows-[290px] bg-slate-200 gap-[1px]">
+                {% for day in days %}
+                <div class="bg-white p-1.5 flex flex-col relative {% if day == 0 %}bg-slate-50/60{% endif %}">
+                    {% if day != 0 %}
+                        <div class="flex justify-between items-start mb-1">
+                            <span class="font-bold text-slate-400 text-sm">{{ day }}</span>
+                            
+                            <!-- Day / Night Explicit Separator Monitor Tally Block -->
+                            {% if session['user_role'] == 'Manager' %}
+                            <div class="bg-slate-900 text-white font-mono text-[8px] p-1 rounded flex gap-2 shadow-xs leading-tight">
+                                <div class="border-r border-slate-700 pr-1 text-amber-400">
+                                    <p class="font-bold border-b border-slate-800">AM</p>
+                                    <p>RN:{{ daily_metrics[day]['D_RN'] }}</p>
+                                    <p>UC:{{ daily_metrics[day]['D_UC'] }}</p>
+                                </div>
+                                <div class="text-indigo-300">
+                                    <p class="font-bold border-b border-slate-800">PM</p>
+                                    <p>RN:{{ daily_metrics[day]['N_RN'] }}</p>
+                                    <p>UC:{{ daily_metrics[day]['N_UC'] }}</p>
+                                </div>
+                            </div>
+                            {% elif day in holidays_by_day %}
+                                <span class="bg-red-50 text-red-600 text-[9px] px-1.5 py-0.5 rounded font-bold truncate max-w-[75px]">{{ holidays_by_day[day] }}</span>
+                            {% endif %}
+                        </div>
                         
-    db.session.commit()
-    flash(f'Injected {count} standing set schedule assignments across this month framework!', 'success')
-    return redirect(url_for('index', month=month))
+                        <div class="flex-1 overflow-y-auto space-y-1.5 pr-0.5 mt-1">
+                            {% if day in shifts_by_day %}
+                                {% for shift in shifts_by_day[day] %}
+                                <!-- Visual Shift Differentiator Coloring Layout Block -->
+                                <div class="p-1.5 rounded-lg text-xs border flex flex-col gap-1 
+                                    {% if 'AM' in shift.time_slot %} bg-amber-50/60 border-amber-200/70 {% else %} bg-indigo-950/[0.03] border-indigo-200/60 {% endif %}">
+                                    
+                                    <div class="font-black text-slate-700 text-[10px] flex justify-between items-center px-1 py-0.5 rounded {% if 'AM' in shift.time_slot %} bg-amber-100 {% else %} bg-indigo-100 {% endif %}">
+                                        <span>{% if 'AM' in shift.time_slot %}☀️{% else %}🌙{% endif %} {{ shift.time_slot }}</span>
+                                        {% if not is_finalized %}
+                                        <form action="/claim/{{ shift.id }}" method="POST" class="inline no-print">
+                                            <button type="submit" class="text-[9px] bg-indigo-600 text-white font-bold px-1 rounded hover:bg-indigo-700 transition">Sign+ ({{ shift.claims|length }})</button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
 
-@app.route('/seed-database-xyz')
-def seed():
-    db.create_all()
-    if not User.query.filter_by(initials="ADM").first():
-        db.session.add(User(name="Head Administrator", initials="ADM", role="Manager", title="Nurse", preferred_shift="Day"))
-    year = datetime.today().year
-    for m in range(1, 13):
-        num_days = calendar.monthrange(year, m)[1]
-        for day in range(1, num_days + 1):
-            day_str = f"{year}-{m:02d}-{day:02d}"
-            if not Shift.query.filter_by(date=day_str, time_slot="7 AM - 7 PM").first():
-                db.session.add(Shift(date=day_str, time_slot="7 AM - 7 PM"))
-            if not Shift.query.filter_by(date=day_str, time_slot="7 PM - 7 AM").first():
-                db.session.add(Shift(date=day_str, time_slot="7 PM - 7 AM"))
-    db.session.commit()
-    return "Persistent storage structural architecture configured successfully."
+                                    <div class="space-y-1 mt-1">
+                                        {% for claim in shift.claims %}
+                                        <div class="p-1 rounded text-[10px] flex flex-col border {% if claim.status == 'Approved' %} bg-emerald-50 border-emerald-200 text-emerald-900 {% else %} bg-slate-50 border-slate-200 text-slate-500 {% endif %}">
+                                            <div class="flex justify-between items-center font-bold">
+                                                <span>👤 {{ claim.user.initials }} <span class="text-[8px] font-normal opacity-70">({{ claim.user.title }})</span></span>
+                                                {% if session['user_role'] == 'Manager' and not is_finalized %}
+                                                <div class="flex gap-0.5 text-[8px] no-print">
+                                                    {% if claim.status == 'Pending Approval' %}
+                                                        <a href="/manager/review-claim/{{ claim.id }}/approve" class="text-emerald-600 font-bold">Approve</a> |
+                                                    {% endif %}
+                                                    <a href="/manager/review-claim/{{ claim.id }}/deny" class="text-rose-600 font-bold">Remove</a>
+                                                </div>
+                                                {% endif %}
+                                            </div>
 
-with app.app_context(): 
-    db.create_all()
+                                            {% if session['user_role'] == 'Manager' and not is_finalized %}
+                                            <form action="/manager/reassign" method="POST" class="mt-1 border-t border-slate-200 pt-1 flex flex-col gap-0.5 no-print">
+                                                <input type="hidden" name="claim_id" value="{{ claim.id }}">
+                                                <div class="flex gap-1">
+                                                    <input type="number" name="target_date_day" min="1" max="31" required placeholder="Day" class="w-10 bg-white border border-slate-300 rounded text-[9px] text-center font-bold">
+                                                    <select name="target_slot" class="bg-white border border-slate-300 rounded text-[8px] flex-1">
+                                                        <option value="7 AM - 7 PM">Day</option>
+                                                        <option value="7 PM - 7 AM">Night</option>
+                                                    </select>
+                                                    <input type="hidden" name="target_date" value="{{ year }}-{{ "%02d"|format(current_month_num) }}-">
+                                                    <button type="submit" class="bg-slate-700 text-white font-bold px-1 rounded text-[8px]">Go</button>
+                                                </div>
+                                            </form>
+                                            {% endif %}
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
 
-if __name__ == '__main__':
-    app.run(debug=True)
+        {% if session['user_role'] == 'Manager' and not is_finalized %}
+        <div class="mt-6 bg-white p-4 rounded-xl border border-slate-200 shadow-md max-w-md no-print">
+            <h3 class="font-black text-sm text-slate-800 mb-2">📥 Quick-Direct Force Assign Tool</h3>
+            <form action="/manager/reassign" method="POST" class="grid grid-cols-4 gap-2 items-end text-xs">
+                <div class="col-span-2">
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Select Employee</label>
+                    <select name="user_id" required class="w-full border border-slate-300 rounded p-1.5 bg-white font-medium">
+                        {% for user in all_users %}
+                        <option value="{{ user.id }}">{{ user.name }} ({{ user.initials }}) [{{ user.title }}]</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Target Day</label>
+                    <input type="number" name="target_day_num" min="1" max="31" required placeholder="e.g. 15" class="w-full border border-slate-300 rounded p-1 text-center font-bold">
+                    <input type="hidden" name="target_date" value="{{ month_key }}-">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Shift</label>
+                    <select name="target_slot" class="w-full border border-slate-300 rounded p-1.5 bg-white font-medium">
+                        <option value="7 AM - 7 PM">Day</option>
+                        <option value="7 PM - 7 AM">Night</option>
+                    </select>
+                </div>
+                <div class="col-span-4 mt-2">
+                    <button type="submit" onclick="this.form.target_date.value = this.form.target_date.value + String(this.form.target_day_num.value).padStart(2, '0');" class="w-full bg-slate-800 text-white font-bold py-1.5 rounded text-[11px]">Inject Direct Approved Assignment</button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
+    </div>
+    
+    <script>
+        document.querySelectorAll('form[action="/manager/reassign"]').forEach(form => {
+            form.addEventListener('submit', function(e) {
+                let dayInput = form.querySelector('input[name="target_date_day"]');
+                let targetInput = form.querySelector('input[name="target_date"]');
+                if(dayInput && targetInput) {
+                    targetInput.value = targetInput.value + String(dayInput.value).padStart(2, '0');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

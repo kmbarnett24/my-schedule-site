@@ -30,13 +30,6 @@
                             <input type="text" name="initials" required maxlength="3" placeholder="JSM" style="text-transform: uppercase;" class="w-full px-3 py-1.5 font-mono text-center font-bold rounded-xl border border-slate-300 text-sm uppercase outline-none">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Preferred Login Track Track</label>
-                            <select name="preferred_shift" class="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white outline-none">
-                                <option value="Day">☀️ Day Shift Track</option>
-                                <option value="Night">🌙 Night Shift Track</option>
-                            </select>
-                        </div>
-                        <div>
                             <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Job Title Designation</label>
                             <select name="title" class="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white outline-none">
                                 <option value="Nurse">Nurse (RN/LPN)</option>
@@ -99,7 +92,6 @@
                             <tr class="bg-slate-100 text-slate-400 uppercase font-bold border-b border-slate-200">
                                 <th class="p-3">User Profile</th>
                                 <th class="p-3 text-center">Initials</th>
-                                <th class="p-3">Preferred Shift</th>
                                 <th class="p-3">Job Title</th>
                                 <th class="p-3">Access Level</th>
                             </tr>
@@ -109,9 +101,6 @@
                             <tr>
                                 <td class="p-3 font-semibold text-slate-700">{{ user.name }}</td>
                                 <td class="p-3 text-center font-mono font-bold text-indigo-600 text-sm">{{ user.initials }}</td>
-                                <td class="p-3 font-medium text-slate-600">
-                                    {% if user.preferred_shift == 'Day' %}☀️ Day{% else %}🌙 Night{% endif %}
-                                </td>
                                 <td class="p-3 font-medium text-slate-600">{{ user.title }}</td>
                                 <td class="p-3">
                                     {% if user.role == 'Manager' %}
