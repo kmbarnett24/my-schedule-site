@@ -22,8 +22,9 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     initials = db.Column(db.String(3), unique=True, nullable=False)
-    role = db.Column(db.String(20), default='Staff')       # Staff or Manager
-    title = db.Column(db.String(30), default='Nurse')      # Nurse, Unit Clerk, Nurse Tech
+    role = db.Column(db.String(20), default='Staff')        # Staff or Manager
+    title = db.Column(db.String(30), default='Nurse')       # Nurse, Unit Clerk, Nurse Tech
+    preferred_shift = db.Column(db.String(10), default='Day') # Day or Night
     standing_schedules = db.relationship('StandingSchedule', backref='user', cascade="all, delete-orphan")
 
 class Shift(db.Model):
@@ -91,7 +92,6 @@ def index():
         if day_num not in shifts_by_day: shifts_by_day[day_num] = []
         shifts_by_day[day_num].append(shift)
 
-    # Compile Daily Role Tallies separated by Day/Night shift channels
     daily_metrics = {}
     for d in range(1, 32):
         daily_metrics[d] = {
@@ -103,7 +103,7 @@ def index():
     for shift in db_shifts:
         dt = datetime.strptime(shift.date, "%Y-%m-%d")
         day_num = dt.day
-        is_we = dt.weekday() in [5, 6] # Saturday=5, Sunday=6
+        is_we = dt.weekday() in [5, 6]
         daily_metrics[day_num]['is_weekend'] = is_we
         
         prefix = 'D_' if "7 AM" in shift.time_slot else 'N_'
@@ -130,15 +130,32 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        initials = request.form.get('initials').strip().upper()
-        user = User.query.filter_by(initials=initials).first()
-        if user:
+        # Check for manager log in via initials entry field
+        manager_initials = request.form.get('manager_initials')
+        if manager_initials:
+            user = User.query.filter_by(initials=manager_initials.strip().upper(), role='Manager').first()
+            if user:
+                session['user_id'] = user.id
+                session['user_name'] = user.name
+                session['user_role'] = user.role
+                return redirect(url_for('index'))
+            flash('Invalid Manager Credentials.', 'error')
+            return redirect(url_for('login'))
+
+        # Standard staff dropdown profile selection
+        user_id = request.form.get('user_id')
+        user = User.query.get(user_id)
+        if user and user.role == 'Staff':
             session['user_id'] = user.id
             session['user_name'] = user.name
             session['user_role'] = user.role
             return redirect(url_for('index'))
-        flash('Initials not found.', 'error')
-    return render_template('login.html')
+        flash('Invalid Profile Selection.', 'error')
+        
+    day_staff = User.query.filter_by(preferred_shift='Day', role='Staff').order_by(User.name).all()
+    night_staff = User.query.filter_by(preferred_shift='Night', role='Staff').order_by(User.name).all()
+    
+    return render_template('login.html', day_staff=day_staff, night_staff=night_staff)
 
 @app.route('/logout')
 def logout():
@@ -157,7 +174,6 @@ def claim_shift(shift_id):
         flash('Schedule is locked!', 'error')
         return redirect(url_for('index', month=int(month_key.split('-')[1])))
 
-    # Validation Guard: Enforce Shift Capacity Caps
     dt = datetime.strptime(shift.date, "%Y-%m-%d")
     is_weekend = dt.weekday() in [5, 6]
     max_rn = 6 if is_weekend else 7
@@ -234,16 +250,13 @@ def export_paycor(month_key):
     if session.get('user_role') != 'Manager': return "Unauthorized", 403
     
     start_date = f"{month_key}-01"
-    end_date = f"{month_key}-31" # Safe bound matching string comparisons
+    end_date = f"{month_key}-31"
     
     shifts = Shift.query.filter(Shift.date >= start_date, Shift.date <= end_date).all()
-    
     output = io.StringIO()
     writer = csv.writer(output)
     
-    # Standard Paycor Upload Headers Matrix Mapping Structure
     writer.writerow(['Employee_ID_Initials', 'Shift_Date', 'Hours_Worked', 'Shift_Type_Code', 'Job_Title'])
-    
     for s in shifts:
         for c in s.claims:
             if c.status == 'Approved':
@@ -265,8 +278,9 @@ def register_staff():
             initials = request.form.get('initials').strip().upper()
             role = request.form.get('role')
             title = request.form.get('title', 'Nurse')
+            preferred_shift = request.form.get('preferred_shift', 'Day')
             if len(initials) == 3 and not User.query.filter_by(initials=initials).first():
-                db.session.add(User(name=full_name, initials=initials, role=role, title=title))
+                db.session.add(User(name=full_name, initials=initials, role=role, title=title, preferred_shift=preferred_shift))
                 db.session.commit()
                 
         elif action == 'set_standing':
@@ -274,7 +288,6 @@ def register_staff():
             day_of_week = int(request.form.get('day_of_week'))
             time_slot = request.form.get('time_slot')
             
-            # Prevent double inserts of the same recurring schedule
             if not StandingSchedule.query.filter_by(user_id=user_id, day_of_week=day_of_week, time_slot=time_slot).first():
                 db.session.add(StandingSchedule(user_id=user_id, day_of_week=day_of_week, time_slot=time_slot))
                 db.session.commit()
@@ -296,13 +309,12 @@ def apply_standing(month_key):
     for day in range(1, num_days + 1):
         date_str = f"{year}-{month:02d}-{day:02d}"
         dt = datetime.strptime(date_str, "%Y-%m-%d")
-        day_of_week = dt.weekday() # 0=Monday, 6=Sunday
+        day_of_week = dt.weekday()
         
         for rule in standings:
             if rule.day_of_week == day_of_week:
                 shift = Shift.query.filter_by(date=date_str, time_slot=rule.time_slot).first()
                 if shift:
-                    # Inject approved entries for matching standing set templates
                     if not ShiftClaim.query.filter_by(shift_id=shift.id, user_id=rule.user_id).first():
                         db.session.add(ShiftClaim(shift_id=shift.id, user_id=rule.user_id, status='Approved'))
                         count += 1
@@ -313,10 +325,9 @@ def apply_standing(month_key):
 
 @app.route('/seed-database-xyz')
 def seed():
-    # Structural creation safety guard
     db.create_all()
     if not User.query.filter_by(initials="ADM").first():
-        db.session.add(User(name="Head Administrator", initials="ADM", role="Manager", title="Nurse"))
+        db.session.add(User(name="Head Administrator", initials="ADM", role="Manager", title="Nurse", preferred_shift="Day"))
     year = datetime.today().year
     for m in range(1, 13):
         num_days = calendar.monthrange(year, m)[1]
@@ -327,9 +338,8 @@ def seed():
             if not Shift.query.filter_by(date=day_str, time_slot="7 PM - 7 AM").first():
                 db.session.add(Shift(date=day_str, time_slot="7 PM - 7 AM"))
     db.session.commit()
-    return "Persistent storage structural architecture configured. Log in using 'ADM'."
+    return "Persistent storage structural architecture configured successfully."
 
-# Permanent Local Storage Context Assurance Hook
 with app.app_context(): 
     db.create_all()
 

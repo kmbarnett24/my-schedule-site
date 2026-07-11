@@ -13,9 +13,9 @@
         <div class="absolute -bottom-10 -left-10 w-32 h-32 bg-emerald-600/10 rounded-full blur-3xl"></div>
 
         <div class="text-center mb-6 relative">
-            <span class="text-[10px] bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 font-mono tracking-widest uppercase font-black px-3 py-1 rounded-full">Secure Entry</span>
+            <span class="text-[10px] bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 font-mono tracking-widest uppercase font-black px-3 py-1 rounded-full">Gatekeeper Matrix</span>
             <h1 class="text-2xl font-black text-white mt-3 tracking-tight">Staff Scheduling Portal</h1>
-            <p class="text-slate-400 text-xs mt-1">Select your profile track below to log in</p>
+            <p class="text-slate-400 text-xs mt-1">Select your profile track or access management console</p>
         </div>
 
         {% with messages = get_flashed_messages() %}
@@ -26,36 +26,59 @@
           {% endif %}
         {% endwith %}
 
-        <form action="/login" method="POST" class="space-y-4 relative">
-            <div>
-                <label class="block text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5">Select Active Profile</label>
-                <select name="user_id" required class="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-indigo-500 font-medium transition">
-                    <option value="" disabled selected>-- Choose Team Member --</option>
-                    
-                    {% if managers %}
-                    <optgroup label="💼 Administrative / Management">
-                        {% for u in managers %}
-                        <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) [Manager]</option>
-                        {% endfor %}
-                    </optgroup>
-                    {% endif %}
+        <!-- Staff Dropdown Portal Pane -->
+        <div id="staffPane">
+            <form action="/login" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5">Select Your Name</label>
+                    <select name="user_id" required class="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-indigo-500 font-medium transition">
+                        <option value="" disabled selected>-- Choose Team Member --</option>
+                        
+                        <optgroup label="☀️ Day Shift Staff Track">
+                            {% for u in day_staff %}
+                            <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) - {{ u.title }}</option>
+                            {% endfor %}
+                        </optgroup>
 
-                    <optgroup label="☀️ Day Shift Staff Channel">
-                        {% for u in day_staff if u.role != 'Manager' %}
-                        <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) - {{ u.title }}</option>
-                        {% endfor %}
-                    </optgroup>
+                        <optgroup label="🌙 Night Shift Staff Track">
+                            {% for u in night_staff %}
+                            <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) - {{ u.title }}</option>
+                            {% endfor %}
+                        </optgroup>
+                    </select>
+                </div>
 
-                    <optgroup label="🌙 Night Shift Staff Channel">
-                        {% for u in night_staff if u.role != 'Manager' %}
-                        <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) - {{ u.title }}</option>
-                        {% endfor %}
-                    </optgroup>
-                </select>
+                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl transition text-xs tracking-wide shadow-lg mt-2">Initialize Scheduling Session</button>
+            </form>
+            
+            <div class="mt-6 pt-4 border-t border-slate-800 text-center">
+                <button onclick="togglePanes()" class="text-xs text-slate-400 hover:text-white font-semibold transition underline decoration-indigo-500 underline-offset-4">💼 Switch to Manager Dashboard Sign In</button>
             </div>
+        </div>
 
-            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl transition text-xs tracking-wide shadow-lg shadow-indigo-600/20 mt-2">Initialize Workspace Sessions</button>
-        </form>
+        <!-- Manager Credentials Pane (Hidden by Default) -->
+        <div id="managerPane" class="hidden">
+            <form action="/login" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5">Manager Authorization ID</label>
+                    <input type="text" name="manager_initials" placeholder="Enter Administrative Initials (e.g. ADM)" required style="text-transform: uppercase;" class="w-full bg-slate-950 border border-slate-800 text-slate-200 text-center tracking-widest font-mono font-bold rounded-xl px-3 py-2.5 text-xs uppercase outline-none focus:border-purple-500 transition">
+                </div>
+
+                <button type="submit" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl transition text-xs tracking-wide shadow-lg mt-2">Verify Administrative Clearance</button>
+            </form>
+            
+            <div class="mt-6 pt-4 border-t border-slate-800 text-center">
+                <button onclick="togglePanes()" class="text-xs text-slate-400 hover:text-white font-semibold transition underline decoration-slate-500 underline-offset-4">← Back to Staff Directory Selection</button>
+            </div>
+        </div>
+
     </div>
+
+    <script>
+        function togglePanes() {
+            document.getElementById('staffPane').classList.toggle('hidden');
+            document.getElementById('managerPane').classList.toggle('hidden');
+        }
+    </script>
 </body>
 </html>
