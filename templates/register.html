@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Staff Registration Directory</title>
+    <title>Roster & Standing Patterns Management</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
 <body class="bg-slate-50 text-slate-800 p-4 sm:p-8 min-h-screen">
@@ -15,66 +15,138 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div class="bg-white p-6 rounded-2xl shadow-md border border-slate-200 h-fit">
-                <h2 class="text-xl font-black text-slate-900 mb-1">Add Team Member</h2>
-                
-                <form action="/admin/register" method="POST" class="space-y-4 mt-4">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Full Name</label>
-                        <input type="text" name="name" required placeholder="Jane Smith, RN" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">3 Initials</label>
-                        <input type="text" name="initials" required maxlength="3" placeholder="JSM" style="text-transform: uppercase;" class="w-full px-3 py-2 text-center font-mono font-bold tracking-widest rounded-xl border border-slate-300 text-base uppercase focus:ring-2 focus:ring-indigo-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Staff Job Title</label>
-                        <select name="title" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none">
-                            <option value="Nurse">Nurse (RN/LPN)</option>
-                            <option value="Unit Clerk">Unit Clerk</option>
-                            <option value="Nurse Tech">Nurse Tech (CNA/PCT)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Security Clearance Role</label>
-                        <select name="role" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none">
-                            <option value="Staff">Staff Workspace Access</option>
-                            <option value="Manager">Manager Full Administrative Access</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl transition text-sm shadow-sm">Save to Roster</button>
-                </form>
+            <div class="space-y-6">
+                <!-- Registration Workspace Widget Box -->
+                <div class="bg-white p-5 rounded-2xl shadow-md border border-slate-200">
+                    <h2 class="text-lg font-black text-slate-900 mb-3">Add Team Member</h2>
+                    <form action="/admin/register" method="POST" class="space-y-3">
+                        <input type="hidden" name="action" value="register">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Full Name</label>
+                            <input type="text" name="name" required placeholder="Jane Smith, RN" class="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">3 Initials</label>
+                            <input type="text" name="initials" required maxlength="3" placeholder="JSM" style="text-transform: uppercase;" class="w-full px-3 py-1.5 font-mono text-center font-bold rounded-xl border border-slate-300 text-sm uppercase outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Preferred Login Track Track</label>
+                            <select name="preferred_shift" class="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white outline-none">
+                                <option value="Day">☀️ Day Shift Track</option>
+                                <option value="Night">🌙 Night Shift Track</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Job Title Designation</label>
+                            <select name="title" class="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white outline-none">
+                                <option value="Nurse">Nurse (RN/LPN)</option>
+                                <option value="Unit Clerk">Unit Clerk</option>
+                                <option value="Nurse Tech">Nurse Tech (CNA/PCT)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Security Clearance Role</label>
+                            <select name="role" class="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white outline-none">
+                                <option value="Staff">Staff Workspace Access</option>
+                                <option value="Manager">Manager Full Administrative Access</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl transition text-xs shadow-sm">Save to Roster</button>
+                    </form>
+                </div>
+
+                <!-- Standing Sets Generator Workspace Widget Box -->
+                <div class="bg-white p-5 rounded-2xl shadow-md border border-slate-200">
+                    <h2 class="text-lg font-black text-slate-900 mb-1">Standing Set Schedule</h2>
+                    <p class="text-[11px] text-slate-400 mb-3 font-medium">Define automated baseline recurring shifts.</p>
+                    <form action="/admin/register" method="POST" class="space-y-3">
+                        <input type="hidden" name="action" value="set_standing">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Select Employee</label>
+                            <select name="user_id" required class="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white outline-none">
+                                {% for user in users %}{% if user.role != 'Manager' %}
+                                <option value="{{ user.id }}">{{ user.name }} ({{ user.initials }})</option>
+                                {% endif %}{% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Day of Week</label>
+                            <select name="day_of_week" class="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white outline-none">
+                                <option value="0">Mondays</option><option value="1">Tuesdays</option>
+                                <option value="2">Wednesdays</option><option value="3">Thursdays</option>
+                                <option value="4">Fridays</option><option value="5">Saturdays</option>
+                                <option value="6">Sundays</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Shift Window</label>
+                            <select name="time_slot" class="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white outline-none">
+                                <option value="7 AM - 7 PM">☀️ Day Shift (7A - 7P)</option>
+                                <option value="7 PM - 7 AM">🌙 Night Shift (7P - 7A)</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 rounded-xl transition text-xs shadow-sm">Save Recurring Lock Rule</button>
+                    </form>
+                </div>
             </div>
 
-            <div class="md:grid-cols-1 md:col-span-2 bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
-                <div class="p-4 bg-slate-50 border-b border-slate-200"><h3 class="font-black text-slate-800">Current Registered Roster</h3></div>
-                <table class="w-full text-left text-sm">
-                    <thead>
-                        <tr class="bg-slate-100 text-slate-400 text-xs uppercase tracking-wider font-bold border-b border-slate-200">
-                            <th class="p-3">User Profile</th>
-                            <th class="p-3 text-center">Initials</th>
-                            <th class="p-3">Job Title</th>
-                            <th class="p-3">Role</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        {% for user in users %}
-                        <tr>
-                            <td class="p-3 font-semibold text-slate-700">{{ user.name }}</td>
-                            <td class="p-3 text-center font-mono font-bold text-indigo-600 text-base">{{ user.initials }}</td>
-                            <td class="p-3 font-medium text-slate-600">{{ user.title }}</td>
-                            <td class="p-3">
-                                {% if user.role == 'Manager' %}
-                                    <span class="px-2 py-0.5 text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100 rounded-full">Manager</span>
-                                {% else %}
-                                    <span class="px-2 py-0.5 text-xs bg-slate-100 text-slate-500 rounded-full">Staff</span>
-                                {% endif %}
-                            </td>
-                        </tr>
+            <!-- Directory Datatable Container Panels Grid Block -->
+            <div class="md:col-span-2 space-y-6">
+                <div class="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
+                    <div class="p-4 bg-slate-50 border-b border-slate-200"><h3 class="font-black text-slate-800 text-sm">Active Registered Team Directory</h3></div>
+                    <table class="w-full text-left text-xs">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-400 uppercase font-bold border-b border-slate-200">
+                                <th class="p-3">User Profile</th>
+                                <th class="p-3 text-center">Initials</th>
+                                <th class="p-3">Preferred Shift</th>
+                                <th class="p-3">Job Title</th>
+                                <th class="p-3">Access Level</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            {% for user in users %}
+                            <tr>
+                                <td class="p-3 font-semibold text-slate-700">{{ user.name }}</td>
+                                <td class="p-3 text-center font-mono font-bold text-indigo-600 text-sm">{{ user.initials }}</td>
+                                <td class="p-3 font-medium text-slate-600">
+                                    {% if user.preferred_shift == 'Day' %}☀️ Day{% else %}🌙 Night{% endif %}
+                                </td>
+                                <td class="p-3 font-medium text-slate-600">{{ user.title }}</td>
+                                <td class="p-3">
+                                    {% if user.role == 'Manager' %}
+                                        <span class="px-2 py-0.5 text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100 rounded-full">Manager</span>
+                                    {% else %}
+                                        <span class="px-2 py-0.5 text-[10px] bg-slate-100 text-slate-500 rounded-full">Staff</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
+                    <div class="p-4 bg-slate-50 border-b border-slate-200"><h3 class="font-black text-slate-800 text-sm">Active Standing Pattern Constraints</h3></div>
+                    <div class="p-4 max-h-60 overflow-y-auto text-xs space-y-1">
+                        {% for rule in standing_schedules %}
+                        <div class="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between items-center">
+                            <span class="font-bold text-slate-700">👤 {{ rule.user.name }} ({{ rule.user.initials }})</span>
+                            <span class="text-slate-500">
+                                Recurring Day: 
+                                <span class="font-bold text-indigo-600">
+                                    {% if rule.day_of_week == 0 %}Mon{% elif rule.day_of_week == 1 %}Tue{% elif rule.day_of_week == 2 %}Wed{% elif rule.day_of_week == 3 %}Thu{% elif rule.day_of_week == 4 %}Fri{% elif rule.day_of_week == 5 %}Sat{% else %}Sun{% endif %}
+                                </span> 
+                                [{{ rule.time_slot }}]
+                            </span>
+                        </div>
+                        {% else %}
+                        <p class="text-slate-400 font-medium italic text-center py-4">No structural standing patterns defined yet.</p>
                         {% endfor %}
-                    </tbody>
-                </table>
+                    </div>
+                </div>
             </div>
+
         </div>
     </div>
 </body>

@@ -3,32 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nurse Login Portal</title>
+    <title>Matrix Scheduling Gatekeeper</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
-<body class="bg-slate-100 flex items-center justify-center min-h-screen p-4">
-    <div class="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full border border-slate-200">
-        <div class="text-center mb-6">
-            <h1 class="text-2xl font-black text-slate-900">Portal Sign In</h1>
-            <p class="text-sm text-slate-500 mt-1">Enter your 3 initials to view the calendar</p>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-2xl relative overflow-hidden">
+        
+        <div class="absolute -top-10 -right-10 w-32 h-32 bg-indigo-600/10 rounded-full blur-3xl"></div>
+        <div class="absolute -bottom-10 -left-10 w-32 h-32 bg-emerald-600/10 rounded-full blur-3xl"></div>
+
+        <div class="text-center mb-6 relative">
+            <span class="text-[10px] bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 font-mono tracking-widest uppercase font-black px-3 py-1 rounded-full">Secure Entry</span>
+            <h1 class="text-2xl font-black text-white mt-3 tracking-tight">Staff Scheduling Portal</h1>
+            <p class="text-slate-400 text-xs mt-1">Select your profile track below to log in</p>
         </div>
 
         {% with messages = get_flashed_messages() %}
           {% if messages %}
             {% for msg in messages %}
-              <div class="p-3 mb-4 text-xs font-semibold rounded-lg bg-rose-50 text-rose-800 border border-rose-200 text-center">{{ msg }}</div>
+              <div class="p-3 mb-4 text-xs font-bold rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-center">{{ msg }}</div>
             {% endfor %}
           {% endif %}
         {% endwith %}
 
-        <form action="/login" method="POST" class="space-y-4">
+        <form action="/login" method="POST" class="space-y-4 relative">
             <div>
-                <label class="block text-xs font-bold uppercase text-slate-400 tracking-wider mb-2 text-center">Your 3 Initials</label>
-                <input type="text" name="initials" required maxlength="3" placeholder="e.g. ADM" style="text-transform: uppercase;" class="w-full text-center tracking-widest font-mono text-2xl px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase">
+                <label class="block text-[10px] uppercase font-black text-slate-500 tracking-wider mb-1.5">Select Active Profile</label>
+                <select name="user_id" required class="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-indigo-500 font-medium transition">
+                    <option value="" disabled selected>-- Choose Team Member --</option>
+                    
+                    {% if managers %}
+                    <optgroup label="💼 Administrative / Management">
+                        {% for u in managers %}
+                        <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) [Manager]</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+
+                    <optgroup label="☀️ Day Shift Staff Channel">
+                        {% for u in day_staff if u.role != 'Manager' %}
+                        <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) - {{ u.title }}</option>
+                        {% endfor %}
+                    </optgroup>
+
+                    <optgroup label="🌙 Night Shift Staff Channel">
+                        {% for u in night_staff if u.role != 'Manager' %}
+                        <option value="{{ u.id }}">{{ u.name }} ({{ u.initials }}) - {{ u.title }}</option>
+                        {% endfor %}
+                    </optgroup>
+                </select>
             </div>
-            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl transition text-sm shadow-md">
-                Access Schedule
-            </button>
+
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl transition text-xs tracking-wide shadow-lg shadow-indigo-600/20 mt-2">Initialize Workspace Sessions</button>
         </form>
     </div>
 </body>
